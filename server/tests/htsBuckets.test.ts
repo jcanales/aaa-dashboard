@@ -14,6 +14,11 @@ describe('classifyTusa', () => {
     ['99030125',   'ieepa'],
     ['99029952',   'other99'],   // ch-99 but not a known remedy prefix
     ['9903.01.24', 'ieepa'],     // dotted input tolerated
+    ['99030201',   'ieepa'],
+    ['99039101',   'sec301'],
+    ['99037801',   'sec232'],
+    ['99030301',   'other99'],   // border/fentanyl IEEPA order — legacy headers exclude it
+    ['99038701',   'other99'],   // boundary: not 990388/990389/990391
   ];
   it.each(cases)('%s → %s', (tusa, bucket) => {
     expect(classifyTusa(tusa)).toBe(bucket);
@@ -23,9 +28,10 @@ describe('classifyTusa', () => {
 describe('bucketPredicates', () => {
   const p = bucketPredicates('tusa');
   it('regular is a NOT LIKE 99%', () => expect(p.regular).toBe("tusa NOT LIKE '99%'"));
-  it('sec301 covers both prefixes', () => {
+  it('sec301 covers all three prefixes', () => {
     expect(p.sec301).toContain("tusa LIKE '990388%'");
     expect(p.sec301).toContain("tusa LIKE '990389%'");
+    expect(p.sec301).toContain("tusa LIKE '990391%'");
   });
   it('other99 excludes every named bucket', () => {
     expect(p.other99).toContain("tusa LIKE '99%'");

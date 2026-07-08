@@ -1,10 +1,14 @@
 export type DutyBucket = 'regular' | 'sec301' | 'sec232' | 'ieepa' | 'other99';
 
 // Chapter-99 tariff prefixes (digits only) per bucket. Single source of truth
-// for both the TS classifier and the SQL predicates.
-const SEC301_PREFIXES = ['990388', '990389'];
-const SEC232_PREFIXES = ['990380', '990381', '990385'];
-const IEEPA_PREFIXES  = ['990301'];
+// for both the TS classifier and the SQL predicates. Verified against
+// per-entry header bucket fields (USENTRY.DUTY_SEC_301/232/IEEPA) over
+// 7,387 Q1-2026 entries — see task-3-report.md. 990303 (border/fentanyl
+// IEEPA order) is intentionally excluded: the legacy headers do not count
+// it in DUTY_SEC_IEEPA, so it stays in other99.
+const SEC301_PREFIXES = ['990388', '990389', '990391'];
+const SEC232_PREFIXES = ['990380', '990381', '990385', '990376', '990378', '990379', '990394'];
+const IEEPA_PREFIXES  = ['990301', '990302'];
 
 export function classifyTusa(tusa: string): DutyBucket {
   const code = tusa.replace(/\D/g, '');

@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers } from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Legend, PieChart, Pie, Cell,
+} from 'recharts'
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
 import { SearchButton } from '@/components/ui/SearchButton'
@@ -24,6 +28,10 @@ export function formatHts(code: string): string {
   return parts.join('.')
 }
 
+function rowsByDuty(rows: HtsBreakdownRow[]): HtsBreakdownRow[] {
+  return [...rows].sort((a, b) => b.totalDuty - a.totalDuty)
+}
+
 function KpiCard({ title, value, sub, icon }: {
   title: string; value: string; sub?: string; icon: React.ReactNode
 }) {
@@ -35,6 +43,15 @@ function KpiCard({ title, value, sub, icon }: {
       </div>
       <p className="text-2xl font-bold text-slate-800 leading-tight">{value}</p>
       {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <h2 className="text-sm font-semibold text-slate-700 mb-3">{title}</h2>
+      {children}
     </div>
   )
 }
@@ -102,6 +119,31 @@ export function DutiesBreakdownPage() {
   })
   const t = data?.totals.current
 
+  const BUCKET_COLORS = { regular: '#0f766e', sec301: '#f59e0b', sec232: '#6366f1', ieepa: '#dc2626', other: '#94a3b8' }
+
+  const top10 = rowsByDuty(data?.current ?? []).slice(0, 10)
+  const priorByHts = new Map((data?.prior ?? []).map((r) => [r.hts, r.totalDuty]))
+  const compareData = top10.map((r) => ({
+    hts: formatHts(r.hts), Current: r.totalDuty, Prior: priorByHts.get(r.hts) ?? 0,
+  }))
+
+  const trendData = monthly.map((m) => ({
+    period: m.period, Regular: m.regularDuty, 'Sec 301': m.sec301, 'Sec 232': m.sec232,
+    IEEPA: m.ieepaDuty + m.remediation,
+  }))
+
+  const donutData = t ? [
+    { name: 'Regular', value: t.regularDuty, color: BUCKET_COLORS.regular },
+    { name: 'Sec 301', value: t.sec301,      color: BUCKET_COLORS.sec301 },
+    { name: 'Sec 232', value: t.sec232,      color: BUCKET_COLORS.sec232 },
+    { name: 'IEEPA',   value: t.ieepa,       color: BUCKET_COLORS.ieepa },
+    { name: 'Other',   value: t.other,       color: BUCKET_COLORS.other },
+  ].filter((d) => d.value > 0) : []
+
+  const rateData = top10
+    .filter((r) => r.enteredValue > 0)
+    .map((r) => ({ hts: formatHts(r.hts), 'Effective Rate %': (r.totalDuty / r.enteredValue) * 100 }))
+
   const SortHeader = ({ k, label, right = true }: { k: SortKey; label: string; right?: boolean }) => (
     <th
       onClick={() => toggleSort(k)}
@@ -142,9 +184,63 @@ export function DutiesBreakdownPage() {
                  icon={<ShieldAlert className="h-4 w-4" />} />
       </div>
 
-      {/* Chart rows — populated in Task 7 */}
-      <div id="hts-chart-row-1" className="grid grid-cols-1 lg:grid-cols-2 gap-4" />
-      <div id="hts-chart-row-2" className="grid grid-cols-1 lg:grid-cols-2 gap-4" />
+      {/* Chart row 1 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="Top 10 HTS — Current vs Prior Period">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={compareData} layout="vertical" margin={{ left: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => fmtUSD(v)} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Current" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
+              <Bar dataKey="Prior"   fill={BUCKET_COLORS.other}   radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Monthly Duty Trend by Type">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => fmtUSD(v)} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Regular" stackId="d" fill={BUCKET_COLORS.regular} />
+              <Bar dataKey="Sec 301" stackId="d" fill={BUCKET_COLORS.sec301} />
+              <Bar dataKey="Sec 232" stackId="d" fill={BUCKET_COLORS.sec232} />
+              <Bar dataKey="IEEPA"   stackId="d" fill={BUCKET_COLORS.ieepa} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Chart row 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="Duty Composition">
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                {donutData.map((d) => <Cell key={d.name} fill={d.color} />)}
+              </Pie>
+              <Tooltip formatter={(v: number) => fmtUSD(v)} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Effective Duty Rate — Top HTS">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={rateData} layout="vertical" margin={{ left: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v: number) => `${v.toFixed(0)}%`} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} />
+              <Bar dataKey="Effective Rate %" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
 
       {/* HTS table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

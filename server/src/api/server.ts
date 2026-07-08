@@ -9,6 +9,7 @@ import alertsRouter from './routes/alerts';
 import entriesRouter from './routes/entries';
 import aesRouter from './routes/aes';
 import abiRouter from './routes/abi';
+import htsBreakdownRouter from './routes/htsBreakdown';
 import { startPollers } from '../pollers/pollerManager';
 import { logger } from '../utils/logger';
 
@@ -70,6 +71,7 @@ app.use('/api/changes', changesRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/review', reviewRouter);
 app.use('/api/alerts', alertsRouter);
+app.use('/api/entries/hts-breakdown', htsBreakdownRouter);
 app.use('/api/entries', entriesRouter);
 app.use('/api/aes', aesRouter);
 app.use('/api/abi', abiRouter);

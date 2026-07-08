@@ -159,5 +159,82 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// ── GET /api/entries/hts-breakdown/entries?hts=&coKey=&dateFrom=&dateTo= ─────
+router.get('/entries', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { hts, coKey, dateFrom: dfStr, dateTo: dtStr } = req.query as {
+      hts?: string; coKey?: string; dateFrom?: string; dateTo?: string;
+    };
+
+    if (!hts || !(/^\d{4,10}$/.test(hts) || hts === 'UNCLASSIFIED')) {
+      res.status(400).json({ error: 'hts must be 4-10 digits or UNCLASSIFIED' });
+      return;
+    }
+
+    const allowed = await getAllowedCoKeys(req.user!.userId, req.user!.role);
+    if (coKey && !assertCoKeyAllowed(coKey, allowed, res)) return;
+    if (allowed !== null && allowed.length === 0) { res.json([]); return; }
+
+    const def  = defaultRange();
+    const from = parseDate(dfStr, def.from);
+    const to   = parseDate(dtStr, def.to);
+
+    const pool = await getMssqlPool();
+    const r    = pool.request();
+    r.input('dateFrom', sql.DateTime, from);
+    r.input('dateTo',   sql.DateTime, to);
+    r.input('hts',      sql.VarChar(12), hts);
+    const scopeConds = appendCoKeyConditions({ r, coKey, allowed });
+
+    const result = await r.query<{
+      RECID: string; ENT_NO: string; ENTRY_DATE: Date; PORT_COD: string;
+      CUST_KEY: string; CO_NAME: string | null; ENTERED_VALUE: number;
+      REGULAR_DUTY: number; SEC301: number; SEC232: number; IEEPA: number; OTHER99: number;
+    }>(`
+      ${perLineCte(scopeConds)}
+      SELECT TOP 50
+        e.RECID,
+        RTRIM(e.ENTRY_FIL)+'-'+RTRIM(e.ENTRY)+RTRIM(e.ENTRY_DIG) AS ENT_NO,
+        e.ENTRY_DATE, e.PORT_COD, e.CUST_KEY, m.CO_NAME,
+        SUM(pl.entered_value) AS ENTERED_VALUE,
+        SUM(pl.regular_duty)  AS REGULAR_DUTY,
+        SUM(pl.sec301)        AS SEC301,
+        SUM(pl.sec232)        AS SEC232,
+        SUM(pl.ieepa)         AS IEEPA,
+        SUM(pl.other99)       AS OTHER99
+      FROM  per_line pl
+      JOIN  USLINE  l ON l.RECID = pl.line_id
+      JOIN  USENTRY e ON e.RECID = l.USENTRY_RECID
+      LEFT  JOIN MST m ON m.CO_KEY = e.CUST_KEY
+      WHERE ISNULL(pl.hts, 'UNCLASSIFIED') = @hts
+      GROUP BY e.RECID, e.ENTRY_FIL, e.ENTRY, e.ENTRY_DIG,
+               e.ENTRY_DATE, e.PORT_COD, e.CUST_KEY, m.CO_NAME
+      ORDER BY SUM(pl.regular_duty + pl.sec301 + pl.sec232 + pl.ieepa + pl.other99) DESC
+    `);
+
+    res.json(result.recordset.map((row) => {
+      const regularDuty = Number(row.REGULAR_DUTY);
+      const sec301 = Number(row.SEC301);
+      const sec232 = Number(row.SEC232);
+      const ieepa  = Number(row.IEEPA);
+      const other  = Number(row.OTHER99);
+      return {
+        recid:        String(row.RECID),
+        entryNo:      row.ENT_NO.trim(),
+        entryDate:    row.ENTRY_DATE,
+        port:         row.PORT_COD?.trim() ?? '',
+        custKey:      row.CUST_KEY?.trim() ?? '',
+        custName:     row.CO_NAME?.trim() ?? null,
+        enteredValue: Number(row.ENTERED_VALUE),
+        regularDuty, sec301, sec232, ieepa, other,
+        totalDuty:    regularDuty + sec301 + sec232 + ieepa + other,
+      };
+    }));
+  } catch (err) {
+    logger.error('GET /entries/hts-breakdown/entries failed', { message: (err as Error).message });
+    res.status(500).json({ error: 'Failed to fetch entries for HTS' });
+  }
+});
+
 export default router;
 export { queryBreakdownRows, perLineCte };

@@ -1,0 +1,16 @@
+{
+  "name": "JD Group – Trade Compliance Portal",
+  "short_name": "TradePortal",
+  "description": "Customs compliance and tariff monitoring portal for Grupo JD",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#073b49",
+  "theme_color": "#073b49",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}

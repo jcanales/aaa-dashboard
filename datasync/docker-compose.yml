@@ -1,0 +1,26 @@
+# -------------------------------------------------------
+# Airbyte Data Sync — duties-dashboard
+# Ubuntu container that bootstraps Airbyte OSS
+# -------------------------------------------------------
+
+services:
+
+  airbyte-installer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: airbyte-installer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Bind mount (not named volume) so files exist on the host filesystem.
+      # Required because Airbyte's docker-compose uses bind mounts that Docker
+      # resolves from the host — a named volume would be invisible to Docker.
+      - ./airbyte-data:/airbyte
+      - ./.env:/airbyte/.env:ro
+    environment:
+      AIRBYTE_VERSION: ${AIRBYTE_VERSION:-0.63.11}
+      AIRBYTE_PORT: ${AIRBYTE_PORT:-8000}
+      # Pass the host's absolute path to the datasync folder so setup.sh
+      # can tell Docker where to resolve Airbyte's bind mounts.
+      HOST_PWD: ${PWD}
+    restart: "no"

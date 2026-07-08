@@ -1,0 +1,42 @@
+{
+  "name": "jd-tariff-monitor-server",
+  "version": "1.0.0",
+  "description": "Real-Time Tariff Change Monitoring System for Grupo JD — Agencia Aduanal Jorge Díaz, S.C.",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/api/server.ts",
+    "build": "tsc",
+    "start": "node dist/api/server.js",
+    "test": "vitest run",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "ts-node-dev --transpile-only src/scripts/seed.ts",
+    "pollers:run": "ts-node-dev --transpile-only src/scripts/runPollers.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@prisma/client": "^5.22.0",
+    "@slack/webhook": "^7.0.3",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.4.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "fast-xml-parser": "^4.5.3",
+    "jsonwebtoken": "^9.0.2",
+    "mssql": "^12.2.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.10.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/mssql": "^9.1.11",
+    "@types/node": "^22.14.1",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^6.4.17",
+    "prisma": "^5.22.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}

@@ -1,0 +1,107 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TariffSource {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  lastPolled  DateTime?
+  lastHash    String?
+  createdAt   DateTime @default(now())
+  changes     TariffChange[]
+}
+
+model TariffChange {
+  id              String   @id @default(uuid())
+  sourceId        String
+  source          TariffSource @relation(fields: [sourceId], references: [id])
+  documentNumber  String?
+  title           String
+  summary         String
+  impactScore     Int
+  impactRationale String
+  htsCodes        String[]
+  dutyBefore      Json?
+  dutyAfter       Json?
+  effectiveDate   DateTime?
+  publicationDate DateTime
+  sourceUrl       String
+  rawPayloadHash  String
+  status          String   @default("pending")
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  alertsSent      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  alerts          Alert[]
+  clientMatches   ClientHtsMatch[]
+}
+
+model Client {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  email        String
+  slackChannel String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  htsPortfolio ClientHtsPortfolio[]
+  alerts       Alert[]
+}
+
+model ClientHtsPortfolio {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  htsCode     String
+  description String?
+  annualValue Float?
+  addedAt     DateTime @default(now())
+  @@unique([clientId, htsCode])
+}
+
+model ClientHtsMatch {
+  id                  String       @id @default(uuid())
+  changeId            String
+  change              TariffChange @relation(fields: [changeId], references: [id])
+  clientId            String
+  matchedHtsCodes     String[]
+  estimatedDutyImpact Float?
+  createdAt           DateTime     @default(now())
+}
+
+model Alert {
+  id         String       @id @default(uuid())
+  changeId   String
+  change     TariffChange @relation(fields: [changeId], references: [id])
+  clientId   String
+  client     Client       @relation(fields: [clientId], references: [id])
+  channel    String
+  status     String       @default("queued")
+  sentAt     DateTime?
+  createdAt  DateTime     @default(now())
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  role          String
+  passwordHash  String
+  clientCoKeys  String[] @default([])
+  createdAt     DateTime @default(now())
+}
+
+model AiAuditLog {
+  id        String   @id @default(uuid())
+  model     String
+  prompt    String
+  response  String
+  changeId  String?
+  createdAt DateTime @default(now())
+}

@@ -1,72 +1,13 @@
 import { Router, Request, Response } from 'express';
 import sql from 'mssql';
 import { getMssqlPool } from '../../db/mssql';
-import { prisma } from '../../db';
 import { logger } from '../../utils/logger';
+import {
+  getAllowedCoKeys, assertCoKeyAllowed, parseDate,
+  defaultRange, priorPeriod, appendCoKeyConditions,
+} from '../entryScope';
 
 const router = Router();
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-async function getAllowedCoKeys(userId: string, role: string): Promise<string[] | null> {
-  if (role === 'admin' || role === 'broker') return null;
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return [];
-  return (user.clientCoKeys as string[]) ?? [];
-}
-
-function assertCoKeyAllowed(coKey: string, allowed: string[] | null, res: Response): boolean {
-  if (allowed === null) return true;
-  if (allowed.includes(coKey)) return true;
-  res.status(403).json({ error: 'Access denied for this client account' });
-  return false;
-}
-
-/** Parse a date string to a Date, defaulting to `fallback` if missing/invalid. */
-function parseDate(s: string | undefined, fallback: Date): Date {
-  if (!s) return fallback;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? fallback : d;
-}
-
-/** Default date range: start of 3 months ago → today. */
-function defaultRange(): { from: Date; to: Date } {
-  const to   = new Date();
-  const from = new Date(to);
-  from.setMonth(from.getMonth() - 2);
-  from.setDate(1);
-  from.setHours(0, 0, 0, 0);
-  return { from, to };
-}
-
-/** Compute prior period of the same length immediately before dateFrom. */
-function priorPeriod(from: Date, to: Date): { priorFrom: Date; priorTo: Date } {
-  const durationMs  = to.getTime() - from.getTime();
-  const priorTo     = new Date(from.getTime() - 1); // 1ms before start of current range
-  const priorFrom   = new Date(priorTo.getTime() - durationMs);
-  return { priorFrom, priorTo };
-}
-
-// ── Scope builder ─────────────────────────────────────────────────────────────
-
-interface ScopeParams {
-  r:       sql.Request;
-  coKey?:  string;
-  allowed: string[] | null;
-}
-
-function appendCoKeyConditions({ r, coKey, allowed }: ScopeParams): string[] {
-  const conditions: string[] = [];
-  if (coKey) {
-    r.input('coKey', sql.VarChar(6), coKey);
-    conditions.push('e.CUST_KEY = @coKey');
-  } else if (allowed !== null && allowed.length > 0) {
-    const pn = allowed.map((_, i) => `@ck${i}`);
-    allowed.forEach((k, i) => r.input(`ck${i}`, sql.VarChar(6), k));
-    conditions.push(`e.CUST_KEY IN (${pn.join(',')})`);
-  }
-  return conditions;
-}
 
 // ── GET /api/entries/clients ───────────────────────────────────────────────────
 router.get('/clients', async (req: Request, res: Response): Promise<void> => {

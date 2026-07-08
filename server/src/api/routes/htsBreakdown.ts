@@ -126,17 +126,23 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const allowed = await getAllowedCoKeys(req.user!.userId, req.user!.role);
 
     if (coKey && !assertCoKeyAllowed(coKey, allowed, res)) return;
-    if (allowed !== null && allowed.length === 0) {
-      const empty = sumTotals([]);
-      res.json({ current: [], prior: [], totals: { current: empty, prior: empty },
-                 dateFrom: '', dateTo: '', priorFrom: '', priorTo: '' });
-      return;
-    }
 
     const def  = defaultRange();
     const from = parseDate(dfStr, def.from);
     const to   = parseDate(dtStr, def.to);
     const { priorFrom, priorTo } = priorPeriod(from, to);
+
+    if (allowed !== null && allowed.length === 0) {
+      const empty = sumTotals([]);
+      res.json({
+        current: [], prior: [], totals: { current: empty, prior: empty },
+        dateFrom:  from.toISOString().slice(0, 10),
+        dateTo:    to.toISOString().slice(0, 10),
+        priorFrom: priorFrom.toISOString().slice(0, 10),
+        priorTo:   priorTo.toISOString().slice(0, 10),
+      });
+      return;
+    }
 
     const pool = await getMssqlPool();
     const [current, prior] = await Promise.all([
@@ -237,4 +243,3 @@ router.get('/entries', async (req: Request, res: Response): Promise<void> => {
 });
 
 export default router;
-export { queryBreakdownRows, perLineCte };

@@ -128,7 +128,11 @@ export function DutiesBreakdownPage() {
   }))
 
   const trendData = monthly.map((m) => ({
-    period: m.period, Regular: m.regularDuty, 'Sec 301': m.sec301, 'Sec 232': m.sec232,
+    // ieepa/monthly's regularDuty is the header DUTY grand total (incl. all
+    // surcharges), not the regular-duty segment alone — subtract the other
+    // buckets to isolate it.
+    period: m.period, Regular: Math.max(0, m.regularDuty - m.sec301 - m.sec232 - m.ieepaDuty - m.remediation),
+    'Sec 301': m.sec301, 'Sec 232': m.sec232,
     IEEPA: m.ieepaDuty + m.remediation,
   }))
 

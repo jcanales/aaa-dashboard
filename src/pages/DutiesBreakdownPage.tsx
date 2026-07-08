@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers } from 'lucide-react'
 import { ClientSelector } from '@/components/ui/ClientSelector'
@@ -52,10 +52,16 @@ export function DutiesBreakdownPage() {
   const [sortKey, setSortKey] = useState<SortKey>('totalDuty')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<Record<string, HtsEntryRow[] | 'loading'>>({})
+  // Per-hts fetch generation counters guard against stale async writes: a fetch's
+  // .then/.catch only applies if both the row's own sequence and the filter
+  // generation are unchanged since the fetch was issued.
+  const expandSeq = useRef<Record<string, number>>({})
+  const genRef = useRef(0)
 
   const params = { coKey: selectedClient?.coKey, dateFrom, dateTo }
 
   useEffect(() => {
+    genRef.current += 1
     setLoading(true)
     setExpanded({})
     Promise.all([fetchHtsBreakdown(params), fetchIeepaMonthly(params)])
@@ -71,13 +77,22 @@ export function DutiesBreakdownPage() {
 
   function toggleExpand(hts: string) {
     if (expanded[hts]) {
+      expandSeq.current[hts] = (expandSeq.current[hts] ?? 0) + 1
       setExpanded((e) => { const { [hts]: _, ...rest } = e; return rest })
       return
     }
+    const seq = (expandSeq.current[hts] = (expandSeq.current[hts] ?? 0) + 1)
+    const gen = genRef.current
     setExpanded((e) => ({ ...e, [hts]: 'loading' }))
     fetchHtsEntries({ hts, ...params })
-      .then((rows) => setExpanded((e) => ({ ...e, [hts]: rows })))
-      .catch(() => setExpanded((e) => { const { [hts]: _, ...rest } = e; return rest }))
+      .then((rows) => {
+        if (expandSeq.current[hts] !== seq || genRef.current !== gen) return
+        setExpanded((e) => ({ ...e, [hts]: rows }))
+      })
+      .catch(() => {
+        if (expandSeq.current[hts] !== seq || genRef.current !== gen) return
+        setExpanded((e) => { const { [hts]: _, ...rest } = e; return rest })
+      })
   }
 
   const rows = [...(data?.current ?? [])].sort((a, b) => {

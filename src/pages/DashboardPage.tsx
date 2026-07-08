@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -40,11 +41,17 @@ function Trend({ current, prior }: { current: number; prior: number }) {
   )
 }
 
-function KpiCard({ title, value, sub, icon, trend }: {
+function KpiCard({ title, value, sub, icon, trend, onClick }: {
   title: string; value: string; sub?: string; icon: React.ReactNode; trend?: React.ReactNode
+  onClick?: () => void
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-slate-200 p-4 shadow-sm ${
+        onClick ? 'cursor-pointer transition-shadow hover:shadow-md hover:border-teal-300' : ''
+      }`}
+    >
       <div className="flex items-start justify-between mb-2">
         <p className="text-xs text-slate-500 font-medium">{title}</p>
         <span className="text-teal-600">{icon}</span>
@@ -65,6 +72,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   useClients()
   const { selectedClient } = useClientStore()
   const { dateFrom, dateTo, searchTrigger } = useDateStore()
@@ -140,7 +148,8 @@ export function DashboardPage() {
           value={fmtUSD(kpis?.dutyInRange ?? 0)}
           icon={<DollarSign className="h-4 w-4" />}
           trend={kpis && <Trend current={kpis.dutyInRange} prior={kpis.dutyPrior} />}
-          sub="vs prior period"
+          sub="View HTS breakdown →"
+          onClick={() => navigate('/duties/hts')}
         />
         <KpiCard
           title="Entry Value"

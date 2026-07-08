@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, FileText, ArrowLeftRight,
   Receipt, Globe, Bot, PanelLeftClose, PanelLeft, X,
-  Package,
+  Package, PieChart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -40,8 +40,9 @@ export function Sidebar({
     )
 
   const operationsItems = [
-    { path: '/ieepa',  icon: <TrendingUp className="h-4 w-4" />, label: 'IEEPA Analysis' },
-    { path: '/aes',    icon: <FileText className="h-4 w-4" />,   label: 'AES Filings' },
+    { path: '/ieepa',      icon: <TrendingUp className="h-4 w-4" />, label: 'IEEPA Analysis' },
+    { path: '/duties/hts', icon: <PieChart className="h-4 w-4" />,   label: 'Duties Breakdown' },
+    { path: '/aes',        icon: <FileText className="h-4 w-4" />,   label: 'AES Filings' },
   ]
 
   const abiItems = [

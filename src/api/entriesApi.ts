@@ -182,3 +182,71 @@ export async function fetchIeepaMonthly(params: IeepaParams): Promise<IeepaMonth
 export async function fetchIeepaTopEntries(params: IeepaParams): Promise<IeepaTopEntry[]> {
   return get<IeepaTopEntry[]>('/entries/ieepa/top-entries', params as Record<string, string | undefined>)
 }
+
+// ── HTS duty breakdown ─────────────────────────────────────────────────────────
+
+export interface HtsBreakdownRow {
+  hts:          string
+  description:  string | null
+  lineCount:    number
+  enteredValue: number
+  regularDuty:  number
+  sec301:       number
+  sec232:       number
+  ieepa:        number
+  other:        number
+  totalDuty:    number
+}
+
+export interface HtsBreakdownTotals {
+  enteredValue: number
+  regularDuty:  number
+  sec301:       number
+  sec232:       number
+  ieepa:        number
+  other:        number
+  totalDuty:    number
+}
+
+export interface HtsBreakdownResponse {
+  current:   HtsBreakdownRow[]
+  prior:     HtsBreakdownRow[]
+  totals:    { current: HtsBreakdownTotals; prior: HtsBreakdownTotals }
+  dateFrom:  string
+  dateTo:    string
+  priorFrom: string
+  priorTo:   string
+}
+
+export interface HtsEntryRow {
+  recid:        string
+  entryNo:      string
+  entryDate:    string
+  port:         string
+  custKey:      string
+  custName:     string | null
+  enteredValue: number
+  regularDuty:  number
+  sec301:       number
+  sec232:       number
+  ieepa:        number
+  other:        number
+  totalDuty:    number
+}
+
+export async function fetchHtsBreakdown(params: {
+  coKey?:    string
+  dateFrom?: string
+  dateTo?:   string
+}): Promise<HtsBreakdownResponse> {
+  return get<HtsBreakdownResponse>('/entries/hts-breakdown', params as Record<string, string | undefined>)
+}
+
+export async function fetchHtsEntries(params: {
+  hts:       string
+  coKey?:    string
+  dateFrom?: string
+  dateTo?:   string
+}): Promise<HtsEntryRow[]> {
+  return get<HtsEntryRow[]>('/entries/hts-breakdown/entries', params as Record<string, string | undefined>)
+}

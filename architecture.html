@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duties Dashboard — System Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"
+    integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr"
+    crossorigin="anonymous"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #073b49;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin-bottom: 1.25rem;
+    }
+    .toc {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      padding: 1.25rem 1.75rem;
+      margin-bottom: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.35rem 1.5rem;
+    }
+    .toc a {
+      font-size: 0.8rem;
+      color: #2a56e0;
+      text-decoration: none;
+    }
+    .toc a:hover { text-decoration: underline; }
+    .diagram-section {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      padding: 1.75rem 2rem;
+      margin-bottom: 2rem;
+      scroll-margin-top: 1rem;
+    }
+    .diagram-section h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #073b49;
+      margin-bottom: 0.25rem;
+    }
+    .diagram-section p {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 1.25rem;
+    }
+    .diagram-section code {
+      background: #f1f5f9;
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.75rem;
+      color: #073b49;
+    }
+    .mermaid {
+      width: 100%;
+      height: 100%;
+    }
+    .zoom-wrap {
+      position: relative;
+      height: 520px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: #fafafa;
+      cursor: grab;
+    }
+    .zoom-wrap.tall { height: 680px; }
+    .zoom-wrap:active { cursor: grabbing; }
+    .zoom-controls {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .zoom-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      color: #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .zoom-btn:hover { background: #f1f5f9; color: #073b49; }
+    .zoom-hint { font-size: 0.7rem; color: #94a3b8; text-align: center; margin-top: 2px; }
+    .legend {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid #f1f5f9;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .dot-new   { background: #3A6FF9; }
+    .dot-exist { background: #073b49; }
+    .dot-ext   { background: #94a3b8; }
+    .dot-warn  { background: #f59e0b; }
+    .note {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      font-size: 0.78rem;
+      color: #713f12;
+    }
+    .note strong { color: #92400e; }
+  </style>
+</head>
+<body>
+
+  <h1>Duties Dashboard — System Architecture</h1>
+  <p class="subtitle">Grupo JD Trade Compliance Portal · React/Vite frontend + Express/TypeScript backend · legacy SQL Server (read) + PostgreSQL/Prisma (write) · Claude-powered tariff intelligence</p>
+
+  <div class="toc">
+    <a href="#d1">1 · System Architecture</a>
+    <a href="#d2">2 · Per-Client Access Scoping</a>
+    <a href="#d3">3 · Chapter-99 Duty Bucket Classification</a>
+    <a href="#d4">4 · HTS Duty Breakdown Query Pipeline</a>
+    <a href="#d5">5 · Tariff Change Intelligence Pipeline</a>
+    <a href="#d6">6 · HTS Portfolio Matching &amp; Duty Impact</a>
+    <a href="#d7">7 · Database Schema — PostgreSQL (Prisma)</a>
+    <a href="#d8">8 · Database Schema — Legacy SQL Server (read-only)</a>
+    <a href="#d9">9 · Frontend Route Map</a>
+  </div>
+
+  <!-- ─── Diagram 1 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d1">
+    <h2>1 · System Architecture</h2>
+    <p>Frontend React SPA, Express API, two data stores (legacy MSSQL read-only + PostgreSQL/Prisma), four government-source pollers, Claude for classification and the 24-persona AI Agents chat, and email/Slack alerting.</p>
+    <div class="zoom-wrap tall">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(0,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(0,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(0,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="0">
+graph TB
+    subgraph EXT["🌐  External Sources"]
+        FR["Federal Register API"]
+        CSMS["CBP CSMS"]
+        USITC["USITC HTS Schedule"]
+        USTR["USTR / White House"]
+        SMTP["📧 Email SMTP"]
+        SLACKH["💬 Slack Webhooks"]
+    end
+
+    subgraph FE["💻  Frontend — React + Vite  :5175"]
+        Login["LoginPage"]
+        Dash["DashboardPage"]
+        Ieepa["IeepaPage"]
+        Duties["DutiesBreakdownPage\nHTS table · comparison charts"]
+        Aes["AesPage"]
+        AbiX["AbiCrossingsPage"]
+        AbiS["AbiStatementsPage"]
+        Tariff["TariffPage\nreview queue"]
+        Agents["AgentsPage\n24 broker personas"]
+    end
+
+    subgraph BE["⚙️  Backend — Express :3001"]
+        AuthEP["/api/auth/login\nJWT · bcrypt · rate-limited"]
+        EntriesEP["/api/entries\nkpis · monthly · charts · ieepa"]
+        HtsEP["/api/entries/hts-breakdown\nch-99 bucket attribution"]
+        AesEP["/api/aes"]
+        AbiEP["/api/abi\ncrossing · statements"]
+        ChangesEP["/api/changes\nkpis · list · detail"]
+        ClientsEP["/api/clients\n🔒 admin/broker"]
+        ReviewEP["/api/review\n🔒 broker/admin gate"]
+        AlertsEP["/api/alerts\n🔒 broker/admin"]
+        AgentsEP["/api/agents/chat\nSSE stream"]
+
+        subgraph PIPE["🔄  Tariff Pipeline"]
+            PM["pollerManager\nnode-cron"]
+            FRP["federalRegisterPoller · 15m"]
+            CSMSP["cbpCsmsPoller · 20m"]
+            USITCP["usitcHtsPoller · 30m"]
+            USTRP["ustrPoller · 30m"]
+            DIFF["sha256Differ\nhasChanged()"]
+            CLASS["claudeClassifier\nprocessNotice()"]
+            MATCH["clientMatcher\nhtsCodesMatch()"]
+            QUEUE["alertQueue\nqueueAlerts()"]
+            DISPATCH["alertQueue\nprocessApprovedChange()\n🔒 non-bypassable"]
+        end
+    end
+
+    subgraph MSSQL["🗄️  Legacy SQL Server — read-only\nUSENTRY · USLINE · USLINEB · MST · TRAF · USDSTMT · EDI_FILES"]
+        LEGACY[(SQL Server\ndb_2506BIM)]
+    end
+
+    subgraph PG["🗄️  PostgreSQL — Prisma"]
+        PGDB[(TariffChange · Client\nClientHtsPortfolio · ClientHtsMatch\nAlert · User · AiAuditLog)]
+    end
+
+    AI["☁️ Anthropic Claude\nsonnet-4 classifier + agents chat"]
+
+    Login --> AuthEP
+    Dash & Ieepa & Duties --> EntriesEP
+    Duties --> HtsEP
+    Aes --> AesEP
+    AbiX & AbiS --> AbiEP
+    Tariff --> ChangesEP & ReviewEP
+    Agents --> AgentsEP
+
+    AuthEP --> PGDB
+    EntriesEP & HtsEP & AesEP & AbiEP -->|"scoped by clientCoKeys"| LEGACY
+    EntriesEP & AesEP & AbiEP -.->|"resolve allowed coKeys"| PGDB
+    ChangesEP & ClientsEP & ReviewEP & AlertsEP --> PGDB
+    AgentsEP <-->|"streaming"| AI
+
+    PM --> FRP & CSMSP & USITCP & USTRP
+    FRP --> FR
+    CSMSP --> CSMS
+    USITCP --> USITC
+    USTRP --> USTR
+    FRP & CSMSP & USITCP & USTRP --> DIFF
+    DIFF -->|"hash changed"| CLASS
+    CLASS <-->|"classify"| AI
+    CLASS --> PGDB
+    CLASS --> MATCH
+    MATCH --> PGDB
+    MATCH --> QUEUE
+    QUEUE --> PGDB
+    ReviewEP -->|"approved"| DISPATCH
+    DISPATCH --> PGDB
+    DISPATCH --> SMTP & SLACKH
+
+    classDef new  fill:#dbeafe,stroke:#3A6FF9,color:#1e3a8a
+    classDef ext  fill:#f1f5f9,stroke:#94a3b8,color:#475569
+    classDef db   fill:#f0fdf4,stroke:#16a34a,color:#14532d
+    classDef gate fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    class FR,CSMS,USITC,USTR,SMTP,SLACKH ext
+    class LEGACY,PGDB db
+    class ReviewEP,DISPATCH gate
+    class Duties,HtsEP,Agents,AgentsEP new
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="dot dot-new"></div> Recently added (HTS breakdown, AI Agents)</div>
+      <div class="legend-item"><div class="dot dot-ext"></div> External source / channel</div>
+      <div class="legend-item"><div class="dot dot-exist"></div> Data store</div>
+      <div class="legend-item" style="color:#7f1d1d"><div class="dot" style="background:#dc2626"></div> Non-bypassable broker gate</div>
+    </div>
+  </div>
+
+  <!-- ─── Diagram 2 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d2">
+    <h2>2 · Business Rule — Per-Client Access Scoping</h2>
+    <p><code>server/src/api/entryScope.ts</code> is the single source of truth for role-based row scoping against the legacy MSSQL tables. <code>null</code> = unrestricted (admin/broker); an array (possibly empty) scopes the caller to specific <code>CO_KEY</code>s.</p>
+    <div class="zoom-wrap">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(1,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(1,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(1,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="1">
+sequenceDiagram
+    actor User as 👤 User (any role)
+    participant JWT as authenticateJWT
+    participant EP as Route handler
+    participant Scope as entryScope.ts
+    participant DB as Prisma (User.clientCoKeys)
+    participant SQL as MSSQL query
+
+    User->>JWT: GET /api/entries?coKey=...
+    JWT->>JWT: verify Bearer token → req.user{userId, role}
+    JWT->>EP: next()
+
+    EP->>Scope: getAllowedCoKeys(userId, role)
+    alt role is admin or broker
+        Scope-->>EP: null (unrestricted)
+    else role is client
+        Scope->>DB: User.findUnique({id: userId})
+        DB-->>Scope: user.clientCoKeys[]
+        Scope-->>EP: string[] (possibly empty)
+    end
+
+    opt coKey query param supplied
+        EP->>Scope: assertCoKeyAllowed(coKey, allowed, res)
+        alt allowed === null OR coKey in allowed
+            Scope-->>EP: true — proceed
+        else coKey not in allowed
+            Scope-->>User: 403 Access denied for this client account
+        end
+    end
+
+    opt allowed !== null AND allowed.length === 0
+        EP-->>User: empty result set (no MSSQL call)
+    end
+
+    EP->>Scope: appendCoKeyConditions({r, coKey, allowed, column})
+    Scope->>SQL: parametrized WHERE column = @coKey<br/>OR column IN (@ck0,@ck1,...)
+    SQL-->>EP: scoped rows only
+    EP-->>User: 200 OK
+
+    Note over Scope,SQL: entries.ts / htsBreakdown.ts import the shared<br/>entryScope module (column defaults to e.CUST_KEY).
+      </div>
+    </div>
+    <div class="note">
+      <strong>Drift risk (confirmed live):</strong> <code>aes.ts</code> and <code>abi.ts</code> still define their own copy-pasted
+      <code>getAllowedCoKeys</code> / <code>assertCoKeyAllowed</code> instead of importing the shared <code>entryScope</code> module —
+      only <code>entries.ts</code> and <code>htsBreakdown.ts</code> were migrated in commit <code>66a68b1</code>. Column names also differ
+      per legacy table: <code>USENTRY.CUST_KEY</code>, <code>EDI_FILES.IMPOR_KEY</code>, <code>TRAF.CUST_KEY</code>, <code>USDSTMT.IMP_KEY</code>.
+      A future fix to the scoping logic must be applied in four places unless consolidated.
+    </div>
+  </div>
+
+  <!-- ─── Diagram 3 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d3">
+    <h2>3 · Business Rule — Chapter-99 Duty Bucket Classification</h2>
+    <p><code>server/src/api/htsBuckets.ts</code> is the single source of truth for both the TypeScript classifier and the generated SQL predicates, used by every KPI/breakdown query that needs to split duty into Section&nbsp;301 / Section&nbsp;232 / IEEPA / other Chapter-99 buckets.</p>
+    <div class="zoom-wrap tall">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(2,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(2,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(2,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="2">
+flowchart TD
+    A["TUSA tariff number\n(from USLINE / USLINEB)"] --> B["Strip non-digits"]
+    B --> C{"Starts with '99'?"}
+    C -- No --> REG["regular\nordinary column-1 duty"]
+    C -- Yes --> D{"Prefix ∈\n990388·990389·990391?"}
+    D -- Yes --> SEC301["sec301"]
+    D -- No --> E{"Prefix ∈\n990380·990381·990385·\n990376·990378·990379·990394?"}
+    E -- Yes --> SEC232["sec232"]
+    E -- No --> F{"Prefix ∈\n990301·990302?"}
+    F -- Yes --> IEEPA["ieepa"]
+    F -- No --> OTHER["other99\n(incl. 990303 border/fentanyl IEEPA order)"]
+
+    classDef bucket fill:#dbeafe,stroke:#3A6FF9,color:#1e3a8a
+    classDef warn fill:#fefce8,stroke:#ca8a04,color:#713f12
+    class REG,SEC301,SEC232,IEEPA bucket
+    class OTHER warn
+      </div>
+    </div>
+    <div class="note">
+      <strong>990303 is intentionally excluded from IEEPA:</strong> the legacy MSSQL header fields
+      (<code>USENTRY.DUTY_SEC_IEEPA</code>) never count it there either, so classifying it as IEEPA would break
+      reconciliation against the header totals. <br/><br/>
+      <strong>Header-vs-line reconciliation:</strong> the per-line breakdown query
+      (<code>htsBreakdown.ts</code>) treats header <code>DUTY</code> as authoritative for duty actually owed and
+      excludes entries like type&nbsp;23 (TIB) whose line duty was computed but never assessed — this closes the
+      reconciliation gap to ~$95 on $18.35M of Q1&nbsp;2026 duty (see <code>task-3-report.md</code>). Verified against
+      7,387 Q1-2026 entries.
+    </div>
+  </div>
+
+  <!-- ─── Diagram 4 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d4">
+    <h2>4 · Business Rule — HTS Duty Breakdown Query Pipeline</h2>
+    <p><code>GET /api/entries/hts-breakdown</code> re-buckets every entry line (plus its Chapter-99 sub-lines) by commodity HTS code and duty type, for both the selected period and the equal-length prior period, so the frontend can render current-vs-prior comparison charts.</p>
+    <div class="zoom-wrap tall">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(3,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(3,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(3,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="3">
+flowchart TB
+    subgraph SRC["Source rows (WHERE DUTY > 0, scoped, in date range)"]
+        L["USLINE\ncommodity line\n(regular HTS)"]
+        LB["USLINEB\nadditional tariff lines\n(Chapter-99 duties)"]
+    end
+
+    L -->|"UNION ALL"| LINES["lines CTE\nline_id · tusa (digits) · val · duty · descr"]
+    LB -->|"UNION ALL"| LINES
+
+    LINES --> PL["per_line CTE\nGROUP BY line_id"]
+    PL --> B1["hts = regular-bucket tusa\n(commodity classification)"]
+    PL --> B2["entered_value = SUM(regular val)"]
+    PL --> B3["regular_duty / sec301 / sec232 /\nieepa / other99 = SUM(duty) per bucket\n(htsBuckets predicates)"]
+
+    B1 & B2 & B3 --> AGG["GROUP BY hts\nSUM across all matching lines"]
+    AGG --> CUR["current period rows"]
+    AGG --> PRI["prior period rows\n(same query, shifted dates)"]
+
+    CUR --> TOT["totals.current"]
+    PRI --> TOT2["totals.prior"]
+    TOT & TOT2 --> RESP["HtsBreakdownResponse\n{current, prior, totals, dateFrom..priorTo}"]
+
+    RESP --> UI["DutiesBreakdownPage\nsortable table + KPI cards +\ncurrent-vs-prior comparison charts"]
+    UI -->|"row expand\nGET /hts-breakdown/entries?hts="| DRILL["Top 50 entries for that HTS\nguarded by expandSeq/genRef\nagainst stale async writes"]
+
+    classDef db fill:#f0fdf4,stroke:#16a34a,color:#14532d
+    classDef new fill:#dbeafe,stroke:#3A6FF9,color:#1e3a8a
+    class L,LB db
+    class UI,DRILL,RESP new
+      </div>
+    </div>
+    <div class="note">
+      <strong>Stale-response guard:</strong> row expansion tracks a per-HTS fetch sequence number and a global
+      filter-generation counter (<code>expandSeq</code>/<code>genRef</code> in <code>DutiesBreakdownPage.tsx</code>);
+      an in-flight drill-down request whose generation has since changed (client/date filter changed mid-fetch) is
+      discarded on arrival instead of overwriting newer state (fixed in <code>9537a2b</code>).
+    </div>
+  </div>
+
+  <!-- ─── Diagram 5 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d5">
+    <h2>5 · Business Rule — Tariff Change Intelligence Pipeline</h2>
+    <p>Four cron pollers watch government sources for tariff-relevant publications. New content is classified by Claude, matched against client HTS portfolios, and queued for alerting — but nothing is sent until a licensed broker explicitly approves the change.</p>
+    <div class="zoom-wrap tall">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(4,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(4,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(4,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="4">
+sequenceDiagram
+    participant CRON as pollerManager (node-cron)
+    participant POLL as Source poller\n(FR·CSMS·USITC·USTR)
+    participant DIFF as sha256Differ
+    participant PROC as changeDetector.processNotice
+    participant AI as ☁️ Claude classifier
+    participant DB as PostgreSQL (Prisma)
+    participant MATCH as clientMatcher
+    participant Q as alertQueue
+
+    CRON->>POLL: scheduled tick (15m/20m/30m)
+    POLL->>POLL: fetch source content
+    POLL->>DIFF: sha256(content)
+    DIFF-->>POLL: hasChanged(newHash, lastHash)?
+    alt unchanged
+        POLL-->>CRON: skip
+    else changed / new document
+        POLL->>PROC: processNotice(RawNotice)
+        PROC->>AI: classifyTariffNotice(title, content)
+        AI-->>PROC: {summary, impactScore 1-10,\nhtsCodes[], dutyBefore, dutyAfter}
+        PROC->>DB: AiAuditLog.create (always, for audit trail)
+        PROC->>DB: TariffChange.create (status = 'pending')
+        PROC->>MATCH: matchClientsToChange(changeId)
+        MATCH->>DB: Client.findMany({isActive: true, htsPortfolio})
+        loop each active client
+            MATCH->>MATCH: htsCodesMatch(portfolioCode, changedCode)\n10-digit → 8-digit → 6-digit
+            opt matched
+                MATCH->>MATCH: calculateDutyImpact(annualValue, dutyBefore, dutyAfter)
+                MATCH->>DB: ClientHtsMatch.create
+            end
+        end
+        PROC->>Q: (via review flow later) queueAlerts(changeId)
+        Q->>DB: Alert.create (status='queued') per client × channel
+    end
+
+    Note over DB,Q: Change sits in status='pending' until a broker reviews it.
+
+    actor Broker as 👤 Broker / Admin
+    Broker->>DB: GET /api/review (pending, sorted by impactScore desc)
+    Broker->>DB: POST /api/review/:changeId {action: approved|suppressed}
+    alt action = suppressed
+        DB-->>Broker: status='suppressed' — no alerts ever sent
+    else action = approved
+        DB->>Q: queueAlerts(changeId) — idempotent
+        DB->>Q: processApprovedChange(changeId)
+        Q->>Q: 🔒 re-check status==='approved'\n(throws if not — non-bypassable)
+        Q->>DB: Alert.findMany({status:'queued'})
+        loop each queued alert
+            Q->>Q: send email or Slack
+            Q->>DB: Alert.update({status: sent|failed})
+        end
+        Q->>DB: TariffChange.update({alertsSent: true})
+    end
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="dot" style="background:#dc2626"></div> Non-bypassable gate: <code>processApprovedChange</code> throws if <code>status !== 'approved'</code></div>
+    </div>
+  </div>
+
+  <!-- ─── Diagram 6 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d6">
+    <h2>6 · Business Rule — HTS Portfolio Matching &amp; Duty Impact</h2>
+    <p><code>server/src/matching/clientMatcher.ts</code> and <code>impactCalculator.ts</code> — most-specific-first HTS matching and the duty-impact estimate attached to each match.</p>
+    <div class="zoom-wrap">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(5,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(5,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(5,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="5">
+flowchart LR
+    subgraph MATCHF["htsCodesMatch(portfolioCode, changedCode)"]
+        S["Strip non-digits\nfrom both codes"]
+        E{"Exact match?"}
+        P8{"Match on\nfirst 8 digits?"}
+        P6{"Match on\nfirst 6 digits\n(HS chapter/heading)?"}
+        NO["false — no overlap"]
+        YES["true — client is affected"]
+        S --> E
+        E -- Yes --> YES
+        E -- No --> P8
+        P8 -- Yes --> YES
+        P8 -- No --> P6
+        P6 -- Yes --> YES
+        P6 -- No --> NO
+    end
+
+    subgraph IMPACTF["calculateDutyImpact(annualValue, dutyBefore, dutyAfter)"]
+        PR["parseDutyRate(str)\n'7.5%' → 0.075\n'0.075' → 0.075\n'25' → 0.25"]
+        CHK{"both rates\nparsed?"}
+        NULL["null — cannot compute\n(total becomes null for the client)"]
+        CALC["annualValue × (dutyAfter − dutyBefore)\npositive = cost increase"]
+        PR --> CHK
+        CHK -- No --> NULL
+        CHK -- Yes --> CALC
+    end
+
+    YES -->|"per matched portfolio entry"| IMPACTF
+    CALC --> SUM["totalImpact accumulated\nacross all matched HTS codes\nfor this client"]
+    SUM --> REC["ClientHtsMatch record\n{matchedHtsCodes[], estimatedDutyImpact}"]
+
+    classDef rule fill:#dbeafe,stroke:#3A6FF9,color:#1e3a8a
+    class YES,CALC rule
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Diagram 7 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d7">
+    <h2>7 · Database Schema — PostgreSQL (Prisma)</h2>
+    <p>Application-owned data: tariff intelligence pipeline state, client HTS portfolios, alert history, and users. Migrated with Prisma; see <code>server/prisma/schema.prisma</code>.</p>
+    <div class="zoom-wrap tall">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(6,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(6,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(6,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="6">
+erDiagram
+    TariffSource {
+        string   id          PK
+        string   name        UK
+        datetime lastPolled
+        string   lastHash
+        datetime createdAt
+    }
+
+    TariffChange {
+        string   id              PK
+        string   sourceId        FK
+        string   documentNumber
+        string   title
+        string   summary
+        int      impactScore     "1-10"
+        string   impactRationale
+        string[] htsCodes
+        json     dutyBefore
+        json     dutyAfter
+        datetime effectiveDate
+        datetime publicationDate
+        string   sourceUrl
+        string   rawPayloadHash
+        string   status          "pending|approved|suppressed"
+        string   reviewedBy
+        datetime reviewedAt
+        boolean  alertsSent
+        datetime createdAt
+    }
+
+    Client {
+        string   id           PK
+        string   code         UK
+        string   name
+        string   email
+        string   slackChannel
+        boolean  isActive
+        datetime createdAt
+    }
+
+    ClientHtsPortfolio {
+        string   id          PK
+        string   clientId    FK
+        string   htsCode
+        string   description
+        float    annualValue
+        datetime addedAt
+    }
+
+    ClientHtsMatch {
+        string   id                  PK
+        string   changeId            FK
+        string   clientId            FK
+        string[] matchedHtsCodes
+        float    estimatedDutyImpact
+        datetime createdAt
+    }
+
+    Alert {
+        string   id        PK
+        string   changeId  FK
+        string   clientId  FK
+        string   channel   "email|slack"
+        string   status    "queued|sent|failed"
+        datetime sentAt
+        datetime createdAt
+    }
+
+    User {
+        string   id            PK
+        string   email         UK
+        string   name
+        string   role          "admin|broker|client"
+        string   passwordHash
+        string[] clientCoKeys  "logical FK → legacy MST.CO_KEY"
+        datetime createdAt
+    }
+
+    AiAuditLog {
+        string   id        PK
+        string   model
+        string   prompt
+        string   response
+        string   changeId  "nullable, linked post-hoc"
+        datetime createdAt
+    }
+
+    TariffSource       ||--o{ TariffChange       : "polled from"
+    TariffChange        ||--o{ ClientHtsMatch     : "matched to clients"
+    TariffChange        ||--o{ Alert              : "generates"
+    Client              ||--o{ ClientHtsPortfolio : "owns HTS codes"
+    Client               ||--o{ ClientHtsMatch     : "matched via"
+    Client               ||--o{ Alert              : "receives"
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Diagram 8 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d8">
+    <h2>8 · Database Schema — Legacy SQL Server (read-only)</h2>
+    <p>The operational system of record for actual customs entries, lives outside this app. Duties Dashboard only issues scoped <code>SELECT</code>s against it — no writes. Connection config in <code>server/src/db/mssql.ts</code>.</p>
+    <div class="zoom-wrap">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(7,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(7,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(7,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="7">
+erDiagram
+    MST {
+        varchar CO_KEY       PK "6 chars"
+        varchar CO_NAME
+        varchar IRS_NO
+        bit     IS_CUSTOMER
+        bit     ACTIVE
+    }
+
+    USENTRY {
+        int      RECID           PK
+        varchar  ENTRY_FIL
+        varchar  ENTRY
+        varchar  ENTRY_DIG
+        varchar  ENTRY_TYPE      "e.g. 23 = TIB"
+        varchar  CUST_KEY        FK "→ MST.CO_KEY"
+        datetime ENTRY_DATE
+        datetime REL_DATE        "null = pending"
+        datetime LIQ_DATE        "null = not liquidated"
+        varchar  PORT_COD
+        money    DUTY            "header, authoritative"
+        money    DUTY_SEC_301
+        money    DUTY_SEC_232
+        money    DUTY_SEC_IEEPA
+        money    REMEDIATION_DUTY
+        money    TAX
+        money    OTHER
+        money    TOTAL
+        money    ENTRY_VAL
+    }
+
+    USLINE {
+        int     RECID          PK
+        int     USENTRY_RECID  FK
+        varchar TUSA           "commodity HTS"
+        varchar DESC1
+        money   VALUE
+        money   DUTY
+    }
+
+    USLINEB {
+        int     RECID          PK
+        int     USLINE_RECID   FK
+        varchar TUSA           "Chapter-99 tariff line"
+        varchar DESC1
+        money   VALUE
+        money   DUTY
+    }
+
+    TRAF {
+        int      RECID     PK
+        varchar  CUST_KEY  FK "→ MST.CO_KEY"
+        char     STATUS    "O=Open, C=Closed"
+    }
+
+    USDSTMT {
+        int      RECID    PK
+        varchar  IMP_KEY  FK "→ MST.CO_KEY"
+        char     STATUS   "P/A/S/R"
+    }
+
+    EDI_FILES {
+        int      RECID      PK
+        varchar  IMPOR_KEY  FK "→ MST.CO_KEY"
+        varchar  STATUS     "PROCESS_OK · P_ERROR · CANCEL ..."
+    }
+
+    MST ||--o{ USENTRY   : "CO_KEY = CUST_KEY"
+    MST ||--o{ TRAF      : "CO_KEY = CUST_KEY"
+    MST ||--o{ USDSTMT   : "CO_KEY = IMP_KEY"
+    MST ||--o{ EDI_FILES : "CO_KEY = IMPOR_KEY"
+    USENTRY ||--o{ USLINE  : "RECID = USENTRY_RECID"
+    USLINE  ||--o{ USLINEB : "RECID = USLINE_RECID"
+      </div>
+    </div>
+    <div class="note">
+      <strong>Inconsistent client-key column naming across legacy tables</strong> (<code>CUST_KEY</code> vs
+      <code>IMP_KEY</code> vs <code>IMPOR_KEY</code>) is why the scoping helper can't be a single generic SQL
+      fragment — see diagram&nbsp;2. <br/><br/>
+      <strong>Hardcoded credential fallback:</strong> <code>server/src/db/mssql.ts</code> falls back to a literal
+      server IP, DB name, username and password when the corresponding env vars are unset. This should be tightened
+      (fail closed in production) rather than relying on env vars always being present.
+    </div>
+  </div>
+
+  <!-- ─── Diagram 9 ─────────────────────────────────────── -->
+  <div class="diagram-section" id="d9">
+    <h2>9 · Frontend Route Map</h2>
+    <p>React Router tree (<code>src/App.tsx</code>). All routes except <code>/login</code> require an authenticated session (Zustand <code>authStore</code>, JWT persisted to <code>localStorage</code>) and render inside <code>AppShell</code> with the collapsible <code>Sidebar</code>.</p>
+    <div class="zoom-wrap">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="pzAction(8,'in')" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="pzAction(8,'out')" title="Zoom out">&#8722;</button>
+        <button class="zoom-btn" onclick="pzAction(8,'reset')" title="Reset" style="font-size:11px">&#8861;</button>
+        <span class="zoom-hint">scroll</span>
+      </div>
+      <div class="mermaid" data-pz="8">
+graph LR
+    ROOT["/"] -->|"RequireAuth"| SHELL["AppShell\n(Sidebar + TopBar)"]
+    LOGINR["/login"] --> LoginPage
+
+    SHELL --> DashboardPage
+    SHELL --> Ops["Operations group"]
+    Ops --> IeepaPage["/ieepa"]
+    Ops --> DutiesBreakdownPage["/duties/hts"]
+    Ops --> AesPage["/aes"]
+    SHELL --> Abi["ABI group"]
+    Abi --> AbiCrossingsPage["/abi/crossings"]
+    Abi --> AbiStatementsPage["/abi/statements"]
+    SHELL --> TariffPage["/tariff"]
+    SHELL --> AgentsPage["/agents"]
+
+    TariffPage -.->|"broker/admin only"| ReviewGate["review approve/suppress"]
+    AgentsPage -.->|"SSE chat"| Claude2["Claude · 24 skill personas\ncompliance · operations · sales ·\nstrategy · data-analysis"]
+
+    classDef page fill:#dbeafe,stroke:#3A6FF9,color:#1e3a8a
+    class DashboardPage,IeepaPage,DutiesBreakdownPage,AesPage,AbiCrossingsPage,AbiStatementsPage,TariffPage,AgentsPage page
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Pan / Zoom ────────────────────────────────────────────────────────────
+    const _pz = {};
+
+    function pzAction(idx, action) {
+      const p = _pz[idx];
+      if (!p) return;
+      if (action === 'in')    { _zoomToward(p, p.wrap.clientWidth / 2, p.wrap.clientHeight / 2, 1.25); }
+      else if (action === 'out') { _zoomToward(p, p.wrap.clientWidth / 2, p.wrap.clientHeight / 2, 1/1.25); }
+      else { p.s = 1; p.ox = 0; p.oy = 0; _applyT(p); }
+    }
+
+    function _zoomToward(p, mx, my, delta) {
+      const ns = Math.max(0.05, Math.min(15, p.s * delta));
+      p.ox = mx - (mx - p.ox) * (ns / p.s);
+      p.oy = my - (my - p.oy) * (ns / p.s);
+      p.s = ns;
+      _applyT(p);
+    }
+
+    function _applyT(p) {
+      p.svg.style.transform = `translate(${p.ox}px,${p.oy}px) scale(${p.s})`;
+    }
+
+    function _initPz(wrap, svg, idx) {
+      svg.style.transformOrigin = '0 0';
+      svg.style.transition = 'none';
+      const p = { svg, wrap, s: 1, ox: 0, oy: 0, dragging: false, lx: 0, ly: 0 };
+      _pz[idx] = p;
+
+      wrap.addEventListener('wheel', e => {
+        e.preventDefault();
+        const r = wrap.getBoundingClientRect();
+        _zoomToward(p, e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1/1.15);
+      }, { passive: false });
+
+      wrap.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        p.dragging = true;
+        p.lx = e.clientX;
+        p.ly = e.clientY;
+        e.preventDefault();
+      });
+    }
+
+    document.addEventListener('mousemove', e => {
+      Object.values(_pz).forEach(p => {
+        if (!p.dragging) return;
+        p.ox += e.clientX - p.lx;
+        p.oy += e.clientY - p.ly;
+        p.lx = e.clientX;
+        p.ly = e.clientY;
+        _applyT(p);
+      });
+    });
+
+    document.addEventListener('mouseup', () => {
+      Object.values(_pz).forEach(p => { p.dragging = false; });
+    });
+
+    // Attach to each .mermaid[data-pz] via MutationObserver (fires when mermaid injects SVG)
+    document.querySelectorAll('.mermaid[data-pz]').forEach(el => {
+      const idx = parseInt(el.dataset.pz, 10);
+      const wrap = el.closest('.zoom-wrap');
+      new MutationObserver(() => {
+        const svg = el.querySelector('svg');
+        if (svg && !_pz[idx]) _initPz(wrap, svg, idx);
+      }).observe(el, { childList: true });
+    });
+  </script>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        primaryColor:       '#dbeafe',
+        primaryTextColor:   '#1e3a8a',
+        primaryBorderColor: '#3A6FF9',
+        lineColor:          '#94a3b8',
+        secondaryColor:     '#f0fdf4',
+        tertiaryColor:      '#f8fafc',
+        fontFamily:         '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        fontSize:           '13px',
+      },
+      flowchart: { curve: 'basis', padding: 20 },
+      sequence:  { diagramMarginX: 20, diagramMarginY: 10 },
+      er:        { layoutDirection: 'TB' },
+    });
+  </script>
+</body>
+</html>

@@ -160,7 +160,8 @@ export function DashboardPage() {
           title="IEEPA Duties"
           value={fmtUSD(kpis?.ieepaInRange ?? 0)}
           icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
-          sub={`301: ${fmtUSD(kpis?.sec301InRange ?? 0)}`}
+          sub="View IEEPA breakdown →"
+          onClick={() => navigate('/ieepa')}
         />
         <KpiCard
           title="Avg Release Time"

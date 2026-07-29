@@ -117,15 +117,89 @@ async function queryBreakdownRows(
   return result.recordset.map(mapRow);
 }
 
-// ── GET /api/entries/hts-breakdown?coKey=&dateFrom=&dateTo= ──────────────────
+/**
+ * Paginated variant of queryBreakdownRows for the "Duties by HTS Code" grid.
+ * COUNT(*) OVER() and SUM(SUM(...)) OVER() ride along on the grouped result
+ * set — both are logically evaluated across all groups before OFFSET/FETCH
+ * trims the page — so one query pass yields the page, the total group count,
+ * AND the full-period grand totals (needed by the KPI/donut/chart cards,
+ * which must reflect the whole result set, not just the current page).
+ * A second full scan of per_line (which joins/unions the full USLINE +
+ * USLINEB range) was timing out against the 30s MSSQL request limit for
+ * broad "all clients" queries — this collapses that back down to one scan.
+ */
+async function queryBreakdownRowsPage(
+  pool: sql.ConnectionPool,
+  from: Date,
+  to: Date,
+  coKey: string | undefined,
+  allowed: string[] | null,
+  page: number,
+  limit: number,
+): Promise<{ rows: HtsBreakdownRow[]; total: number; totals: ReturnType<typeof sumTotals> }> {
+  const r = pool.request();
+  r.input('dateFrom', sql.DateTime, from);
+  r.input('dateTo',   sql.DateTime, to);
+  r.input('offset',   sql.Int, (page - 1) * limit);
+  r.input('limit',    sql.Int, limit);
+  const scopeConds = appendCoKeyConditions({ r, coKey, allowed });
+
+  const result = await r.query<BreakdownRecord & {
+    TOTAL_GROUPS: number;
+    GRAND_ENTERED_VALUE: number; GRAND_REGULAR_DUTY: number; GRAND_SEC301: number;
+    GRAND_SEC232: number; GRAND_IEEPA: number; GRAND_OTHER99: number;
+  }>(`
+    ${perLineCte(scopeConds)}
+    SELECT ISNULL(hts, 'UNCLASSIFIED') AS HTS,
+           MAX(descr)                  AS DESCR,
+           COUNT(*)                    AS LINE_COUNT,
+           SUM(entered_value)          AS ENTERED_VALUE,
+           SUM(regular_duty)           AS REGULAR_DUTY,
+           SUM(sec301)                 AS SEC301,
+           SUM(sec232)                 AS SEC232,
+           SUM(ieepa)                  AS IEEPA,
+           SUM(other99)                AS OTHER99,
+           COUNT(*)            OVER()  AS TOTAL_GROUPS,
+           SUM(SUM(entered_value)) OVER() AS GRAND_ENTERED_VALUE,
+           SUM(SUM(regular_duty))  OVER() AS GRAND_REGULAR_DUTY,
+           SUM(SUM(sec301))        OVER() AS GRAND_SEC301,
+           SUM(SUM(sec232))        OVER() AS GRAND_SEC232,
+           SUM(SUM(ieepa))         OVER() AS GRAND_IEEPA,
+           SUM(SUM(other99))       OVER() AS GRAND_OTHER99
+    FROM   per_line
+    GROUP  BY ISNULL(hts, 'UNCLASSIFIED')
+    ORDER  BY SUM(regular_duty + sec301 + sec232 + ieepa + other99) DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+  `);
+
+  const first = result.recordset[0];
+  const total = first ? Number(first.TOTAL_GROUPS) : 0;
+  const regularDuty = Number(first?.GRAND_REGULAR_DUTY ?? 0);
+  const sec301 = Number(first?.GRAND_SEC301 ?? 0);
+  const sec232 = Number(first?.GRAND_SEC232 ?? 0);
+  const ieepa  = Number(first?.GRAND_IEEPA ?? 0);
+  const other  = Number(first?.GRAND_OTHER99 ?? 0);
+  const totals = {
+    enteredValue: Number(first?.GRAND_ENTERED_VALUE ?? 0),
+    regularDuty, sec301, sec232, ieepa, other,
+    totalDuty: regularDuty + sec301 + sec232 + ieepa + other,
+  };
+
+  return { rows: result.recordset.map(mapRow), total, totals };
+}
+
+// ── GET /api/entries/hts-breakdown?coKey=&dateFrom=&dateTo=&page=&limit= ─────
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { coKey, dateFrom: dfStr, dateTo: dtStr } = req.query as {
-      coKey?: string; dateFrom?: string; dateTo?: string;
+    const { coKey, dateFrom: dfStr, dateTo: dtStr, page: pageStr, limit: limitStr } = req.query as {
+      coKey?: string; dateFrom?: string; dateTo?: string; page?: string; limit?: string;
     };
     const allowed = await getAllowedCoKeys(req.user!.userId, req.user!.role);
 
     if (coKey && !assertCoKeyAllowed(coKey, allowed, res)) return;
+
+    const page  = Math.max(1, parseInt(pageStr ?? '1', 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(limitStr ?? '100', 10) || 100));
 
     const def  = defaultRange();
     const from = parseDate(dfStr, def.from);
@@ -136,6 +210,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       const empty = sumTotals([]);
       res.json({
         current: [], prior: [], totals: { current: empty, prior: empty },
+        page, limit, total: 0,
         dateFrom:  from.toISOString().slice(0, 10),
         dateTo:    to.toISOString().slice(0, 10),
         priorFrom: priorFrom.toISOString().slice(0, 10),
@@ -145,15 +220,16 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     const pool = await getMssqlPool();
-    const [current, prior] = await Promise.all([
-      queryBreakdownRows(pool, from, to, coKey, allowed),
+    const [{ rows: current, total, totals: currentTotals }, prior] = await Promise.all([
+      queryBreakdownRowsPage(pool, from, to, coKey, allowed, page, limit),
       queryBreakdownRows(pool, priorFrom, priorTo, coKey, allowed),
     ]);
 
     res.json({
       current,
       prior,
-      totals: { current: sumTotals(current), prior: sumTotals(prior) },
+      totals: { current: currentTotals, prior: sumTotals(prior) },
+      page, limit, total,
       dateFrom:  from.toISOString().slice(0, 10),
       dateTo:    to.toISOString().slice(0, 10),
       priorFrom: priorFrom.toISOString().slice(0, 10),

@@ -1,13 +1,14 @@
 /**
- * IEEPA Analysis PDF Report — @react-pdf/renderer template
- * Charts are passed as pre-captured base64 PNG images (html2canvas).
+ * IEEPA Analysis PDF Report — @react-pdf/renderer template mirroring every
+ * section of the live /ieepa page. Charts are passed as pre-captured base64
+ * PNG images (html2canvas); tables/insights are passed as plain data so this
+ * module stays free of chart-library and DOM dependencies.
  */
 import React from 'react'
 import {
-  Document, Page, View, Text, Image, StyleSheet,
-  Font, pdf,
+  Document, Page, View, Text, Image, StyleSheet, pdf,
 } from '@react-pdf/renderer'
-import type { IeepaKpis, IeepaMonthRow, IeepaTopEntry } from '@/api/entriesApi'
+import type { IeepaKpis, IeepaTopEntry } from '@/api/entriesApi'
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 const TEAL   = '#073b49'
@@ -20,6 +21,7 @@ const SLATE  = '#475569'
 const SLATE_L = '#94a3b8'
 const SLATE_BG = '#f8fafc'
 const BORDER = '#e2e8f0'
+const GREEN  = '#16a34a'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmtUSD(n: number) {
@@ -181,6 +183,7 @@ const s = StyleSheet.create({
   },
   trow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER },
   trowAlt: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER, backgroundColor: SLATE_BG },
+  trowPeak: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER, backgroundColor: '#fffbeb' },
   tfoot: { flexDirection: 'row', backgroundColor: '#e7f0f3', borderTopWidth: 1, borderTopColor: '#b0c8d0' },
   tcell: { flex: 1, paddingHorizontal: 6, paddingVertical: 4, fontSize: 7, color: SLATE },
   tcellR: { flex: 1, paddingHorizontal: 6, paddingVertical: 4, fontSize: 7, color: SLATE, textAlign: 'right' },
@@ -193,11 +196,11 @@ const s = StyleSheet.create({
     flex: 1,
     borderRadius: 6,
     padding: 10,
+    backgroundColor: SLATE_BG,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  insightAmber: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' },
-  insightBlue:  { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' },
-  insightTeal:  { backgroundColor: '#f0fdfa', borderWidth: 1, borderColor: '#99f6e4' },
-  insightTitle: { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  insightTitle: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: TEAL, marginBottom: 4 },
   insightBody: { fontSize: 7, lineHeight: 1.5, color: SLATE },
 
   // Footer
@@ -214,22 +217,48 @@ const s = StyleSheet.create({
     paddingTop: 6,
   },
   footerText: { fontSize: 6.5, color: SLATE_L },
+
+  disclaimer: {
+    marginTop: 14,
+    padding: 10,
+    backgroundColor: SLATE_BG,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  disclaimerText: { fontSize: 6.5, color: SLATE_L, lineHeight: 1.5 },
 })
 
 // ── Document component ────────────────────────────────────────────────────────
+export interface PdfMonthRow {
+  key: string; label: string
+  ieepaDuty: number; remediation: number; combined: number
+}
+export interface PdfInsight { title: string; text: string }
+
 interface Props {
   kpis: IeepaKpis
-  monthly: IeepaMonthRow[]
+  // USENTRY.DUTY (kpis.regularDuty) is the header grand-total duty and already
+  // includes sec301/232/ieepa/remediation — the caller isolates the true
+  // baseline duty (same correction DutiesBreakdownPage applies) and passes it
+  // in here rather than this module re-deriving it.
+  trueRegularDuty: number
+  months: PdfMonthRow[]
   topEntries: IeepaTopEntry[]
+  insights: PdfInsight[]
+  peakKey: string | null
   dateFrom?: string
   dateTo?: string
   clientName?: string
-  barChartImg?: string   // base64 PNG of the monthly bar chart
-  donutImg?: string      // base64 PNG of the donut chart
+  barChartImg?: string       // Monthly IEEPA vs Reciprocal stacked bar
+  donutImg?: string          // Duty composition donut
+  duty301Img?: string        // Monthly Section 301 bar
+  generalDutyImg?: string    // Monthly general/regular duty bar
 }
 
 export function IeepaReportDocument({
-  kpis, monthly, topEntries, dateFrom, dateTo, clientName, barChartImg, donutImg,
+  kpis, trueRegularDuty, months, topEntries, insights, peakKey,
+  dateFrom, dateTo, clientName, barChartImg, donutImg, duty301Img, generalDutyImg,
 }: Props) {
   const ieepaImpact = kpis.ieepaDuty + kpis.remediationDuty
   const generated = new Intl.DateTimeFormat('en-US', {
@@ -240,30 +269,37 @@ export function IeepaReportDocument({
     ? `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
     : 'All dates'
 
+  const maxTopEntry = topEntries[0]?.combinedIeepa ?? 0
+
+  const ReportHeader = ({ subtitle }: { subtitle: string }) => (
+    <View style={s.header}>
+      <View style={s.headerLeft}>
+        <Text style={s.headerTitle}>IEEPA Tariff Analysis</Text>
+        <Text style={s.headerSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={s.headerRight}>
+        <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#ffffff' }}>JD Group</Text>
+        <Text style={s.headerMeta}>Generated: {generated}</Text>
+        <Text style={s.headerMeta}>Period: {dateRange}</Text>
+        {clientName && <Text style={s.headerMeta}>Client: {clientName}</Text>}
+      </View>
+    </View>
+  )
+
+  const Footer = () => (
+    <View style={s.footer} fixed>
+      <Text style={s.footerText}>JD Group — IEEPA Tariff Analysis · Confidential</Text>
+      <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+    </View>
+  )
+
   return (
     <Document title="IEEPA Tariff Analysis Report" author="JD Group Trade Portal">
-      {/* ── PAGE 1 ─────────────────────────────────────────────────────────── */}
+
+      {/* ── PAGE 1 — KPIs, Highlights, Composition, Primary Charts ────────── */}
       <Page size="LETTER" style={s.page}>
+        <ReportHeader subtitle="Section 232, IEEPA &amp; Reciprocal Duty Impact Report" />
 
-        {/* Header */}
-        <View style={s.header}>
-          <View style={s.headerLeft}>
-            <Text style={s.headerTitle}>IEEPA Tariff Analysis</Text>
-            <Text style={s.headerSubtitle}>
-              Section 232, IEEPA &amp; Reciprocal Duty Impact Report
-            </Text>
-          </View>
-          <View style={s.headerRight}>
-            <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#ffffff' }}>
-              JD Group
-            </Text>
-            <Text style={s.headerMeta}>Generated: {generated}</Text>
-            <Text style={s.headerMeta}>Period: {dateRange}</Text>
-            {clientName && <Text style={s.headerMeta}>Client: {clientName}</Text>}
-          </View>
-        </View>
-
-        {/* Alert banner */}
         <View style={s.alertBanner}>
           <View style={s.alertDot} />
           <Text style={s.alertText}>
@@ -277,49 +313,49 @@ export function IeepaReportDocument({
         <View style={s.body}>
 
           {/* KPIs */}
-          <Text style={s.sectionTitle}>Summary KPIs</Text>
+          <Text style={s.sectionTitle}>Financial Overview</Text>
           <View style={s.kpiRow}>
             <View style={s.kpiCard}>
-              <Text style={s.kpiLabel}>Total Entries</Text>
-              <Text style={s.kpiValue}>{kpis.totalEntries.toLocaleString()}</Text>
-              <Text style={s.kpiSub}>In selected period</Text>
+              <Text style={s.kpiLabel}>Total Dutiable Value</Text>
+              <Text style={s.kpiValue}>{fmtM(kpis.totalValue)}</Text>
+              <Text style={s.kpiSub}>Across {kpis.totalEntries.toLocaleString()} entries</Text>
+            </View>
+            <View style={s.kpiCard}>
+              <Text style={s.kpiLabel}>Total All Duties Paid</Text>
+              <Text style={s.kpiValue}>{fmtM(kpis.totalDuty)}</Text>
+              <Text style={s.kpiSub}>Duty + IEEPA + 301 + 232</Text>
+            </View>
+            <View style={s.kpiCard}>
+              <Text style={s.kpiLabel}>Regular Duty</Text>
+              <Text style={s.kpiValue}>{fmtUSD(trueRegularDuty)}</Text>
+              <Text style={s.kpiSub}>Sec 301: {fmtUSD(kpis.sec301)}</Text>
             </View>
             <View style={[s.kpiCard, { borderColor: '#fde68a', backgroundColor: '#fffbeb' }]}>
-              <Text style={[s.kpiLabel, { color: '#92400e' }]}>IEEPA-Affected Entries</Text>
-              <Text style={[s.kpiValue, { color: '#b45309' }]}>{kpis.ieepaEntries.toLocaleString()}</Text>
-              <Text style={s.kpiSub}>
-                {pct(kpis.ieepaEntries, kpis.totalEntries)} of all entries
+              <Text style={[s.kpiLabel, { color: '#92400e' }]}>Entries with IEEPA Impact</Text>
+              <Text style={[s.kpiValue, { color: '#b45309' }]}>
+                {kpis.ieepaEntries.toLocaleString()} / {kpis.totalEntries.toLocaleString()}
               </Text>
-            </View>
-            <View style={s.kpiCard}>
-              <Text style={s.kpiLabel}>Total Entry Value</Text>
-              <Text style={s.kpiValue}>{fmtM(kpis.totalValue)}</Text>
-              <Text style={s.kpiSub}>Dutiable value</Text>
-            </View>
-            <View style={s.kpiCard}>
-              <Text style={s.kpiLabel}>Total All Duties</Text>
-              <Text style={s.kpiValue}>{fmtM(kpis.totalDuty)}</Text>
-              <Text style={s.kpiSub}>{pct(ieepaImpact, kpis.totalDuty)} IEEPA-related</Text>
+              <Text style={s.kpiSub}>{pct(kpis.ieepaEntries, kpis.totalEntries)} of all entries</Text>
             </View>
           </View>
 
           {/* IEEPA Highlights */}
-          <Text style={s.sectionTitle}>IEEPA Impact Highlights</Text>
+          <Text style={s.sectionTitle}>IEEPA Duty Breakdown</Text>
           <View style={s.highlightRow}>
             <View style={[s.highlightCard, s.hlCombined]}>
-              <Text style={[s.hlLabel, { color: '#991b1b' }]}>Combined IEEPA Impact</Text>
+              <Text style={[s.hlLabel, { color: '#991b1b' }]}>Combined IEEPA Exposure</Text>
               <Text style={[s.hlAmount, { color: RED }]}>{fmtM(ieepaImpact)}</Text>
-              <Text style={s.hlPct}>{pct(ieepaImpact, kpis.totalDuty)} of total duties</Text>
+              <Text style={s.hlPct}>{pct(ieepaImpact, kpis.totalDuty)} of all duties paid</Text>
             </View>
             <View style={[s.highlightCard, s.hlIeepa]}>
               <Text style={[s.hlLabel, { color: '#92400e' }]}>IEEPA Duty</Text>
               <Text style={[s.hlAmount, { color: AMBER }]}>{fmtM(kpis.ieepaDuty)}</Text>
-              <Text style={s.hlPct}>{pct(kpis.ieepaDuty, kpis.totalDuty)} of total duties</Text>
+              <Text style={s.hlPct}>{pct(kpis.ieepaDuty, ieepaImpact)} of IEEPA total</Text>
             </View>
             <View style={[s.highlightCard, s.hlRemed]}>
               <Text style={[s.hlLabel, { color: '#7c2d12' }]}>Reciprocal Duty</Text>
               <Text style={[s.hlAmount, { color: '#ea580c' }]}>{fmtM(kpis.remediationDuty)}</Text>
-              <Text style={s.hlPct}>{pct(kpis.remediationDuty, kpis.totalDuty)} of total duties</Text>
+              <Text style={s.hlPct}>{pct(kpis.remediationDuty, ieepaImpact)} of IEEPA total</Text>
             </View>
           </View>
 
@@ -327,7 +363,7 @@ export function IeepaReportDocument({
           <Text style={s.sectionTitle}>Duty Composition</Text>
           <View style={s.kpiRow}>
             {[
-              { label: 'Regular Duty', value: kpis.regularDuty, color: TEAL_L },
+              { label: 'Regular Duty', value: trueRegularDuty, color: TEAL_L },
               { label: 'Section 301', value: kpis.sec301, color: PURPLE },
               { label: 'Section 232', value: kpis.sec232, color: BLUE },
               { label: 'IEEPA Duty', value: kpis.ieepaDuty, color: AMBER },
@@ -367,168 +403,144 @@ export function IeepaReportDocument({
               </View>
             </>
           )}
-
         </View>
 
-        {/* Footer */}
-        <View style={s.footer} fixed>
-          <Text style={s.footerText}>JD Group — IEEPA Tariff Analysis · Confidential</Text>
-          <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-        </View>
+        <Footer />
       </Page>
 
-      {/* ── PAGE 2 — Top Entries + Monthly Table + Insights ──────────────── */}
+      {/* ── PAGE 2 — Secondary Charts + Top 10 Entries ─────────────────────── */}
       <Page size="LETTER" style={s.page}>
-
-        <View style={s.header}>
-          <View style={s.headerLeft}>
-            <Text style={s.headerTitle}>IEEPA Tariff Analysis</Text>
-            <Text style={s.headerSubtitle}>Top Entries &amp; Monthly Breakdown</Text>
-          </View>
-          <View style={s.headerRight}>
-            <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#ffffff' }}>JD Group</Text>
-            <Text style={s.headerMeta}>{dateRange}</Text>
-          </View>
-        </View>
+        <ReportHeader subtitle="Monthly Duty 301 &amp; General Duty · Top Entries" />
 
         <View style={s.body}>
 
-          {/* Top 10 entries */}
+          {(duty301Img || generalDutyImg) && (
+            <>
+              <Text style={s.sectionTitle}>Monthly Duty 301 &amp; General Duty</Text>
+              <View style={s.chartsRow}>
+                {duty301Img && (
+                  <View style={[s.chartBox, { flex: 1 }]}>
+                    <View style={s.chartHeader}>
+                      <Text style={s.chartTitle}>Monthly Duty 301 Impact</Text>
+                      <Text style={s.chartSub}>Section 301 duties by month</Text>
+                    </View>
+                    <Image src={duty301Img} style={[s.chartImg, { padding: 6 }]} />
+                  </View>
+                )}
+                {generalDutyImg && (
+                  <View style={[s.chartBox, { flex: 1 }]}>
+                    <View style={s.chartHeader}>
+                      <Text style={s.chartTitle}>Monthly General Duty (HTS Dutiable)</Text>
+                      <Text style={s.chartSub}>Regular duty by month</Text>
+                    </View>
+                    <Image src={generalDutyImg} style={[s.chartImg, { padding: 6 }]} />
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
           {topEntries.length > 0 && (
             <>
-              <Text style={s.sectionTitle}>Top 10 Entries by IEEPA Impact</Text>
+              <Text style={s.sectionTitle}>Top 10 Entries by IEEPA Exposure</Text>
               <View style={s.table}>
                 <View style={s.thead}>
                   <Text style={[s.theadCell, { flex: 1.5 }]}>Entry #</Text>
                   <Text style={s.theadCell}>Date</Text>
-                  <Text style={s.theadCell}>Port</Text>
-                  <Text style={[s.theadCell, { flex: 1.8 }]}>Importer</Text>
-                  <Text style={s.theadCellR}>Entry Value</Text>
                   <Text style={s.theadCellR}>IEEPA Duty</Text>
                   <Text style={s.theadCellR}>Reciprocal</Text>
                   <Text style={s.theadCellR}>Combined</Text>
+                  <Text style={s.theadCellR}>Entry Value</Text>
                 </View>
                 {topEntries.map((row, i) => (
                   <View key={row.recid} style={i % 2 === 0 ? s.trow : s.trowAlt}>
-                    <Text style={[s.tcellBold, { flex: 1.5, fontSize: 6.5 }]}>{row.entryNo}</Text>
+                    <Text style={[s.tcellBold, { flex: 1.5, fontSize: 6.5 }]}>{i + 1}. {row.entryNo}</Text>
                     <Text style={s.tcell}>{fmtDate(row.entryDate)}</Text>
-                    <Text style={s.tcell}>{row.port}</Text>
-                    <Text style={[s.tcell, { flex: 1.8 }]}>{(row.custName ?? row.custKey).substring(0, 28)}</Text>
-                    <Text style={s.tcellR}>{fmtM(row.entryVal)}</Text>
-                    <Text style={[s.tcellAmt, { color: AMBER }]}>{fmtM(row.ieepaDuty)}</Text>
-                    <Text style={[s.tcellAmt, { color: RED }]}>{fmtM(row.remediationDuty)}</Text>
-                    <Text style={[s.tcellAmt, { color: TEAL, fontFamily: 'Helvetica-Bold' }]}>{fmtM(row.combinedIeepa)}</Text>
+                    <Text style={s.tcellR}>{fmtM(row.ieepaDuty)}</Text>
+                    <Text style={s.tcellR}>{fmtM(row.remediationDuty)}</Text>
+                    <Text style={[s.tcellAmt, { color: AMBER }]}>{fmtM(row.combinedIeepa)}</Text>
+                    <Text style={[s.tcellAmt, { color: TEAL }]}>{fmtM(row.entryVal)}</Text>
                   </View>
                 ))}
               </View>
+              <Text style={{ fontSize: 6, color: SLATE_L, marginTop: -2 }}>
+                Sorted by combined IEEPA duty descending · Impact relative to top entry: {fmtM(maxTopEntry)}
+              </Text>
             </>
           )}
+        </View>
 
-          {/* Month-by-month table */}
-          {monthly.length > 0 && (
+        <Footer />
+      </Page>
+
+      {/* ── PAGE 3 — Month-by-Month Comparison + Key Insights ──────────────── */}
+      <Page size="LETTER" style={s.page}>
+        <ReportHeader subtitle="Month-by-Month Comparison &amp; Key Insights" />
+
+        <View style={s.body}>
+
+          {months.length > 0 && (
             <>
-              <Text style={s.sectionTitle}>Month-by-Month IEEPA Breakdown</Text>
+              <Text style={s.sectionTitle}>Month-by-Month IEEPA Comparison</Text>
               <View style={s.table}>
                 <View style={s.thead}>
                   <Text style={s.theadCell}>Month</Text>
-                  <Text style={s.theadCellR}>Entries</Text>
-                  <Text style={s.theadCellR}>IEEPA Entries</Text>
-                  <Text style={s.theadCellR}>Regular Duty</Text>
-                  <Text style={s.theadCellR}>Sec 301</Text>
-                  <Text style={s.theadCellR}>Sec 232</Text>
                   <Text style={s.theadCellR}>IEEPA Duty</Text>
-                  <Text style={s.theadCellR}>Reciprocal</Text>
+                  <Text style={s.theadCellR}>Reciprocal Duty</Text>
+                  <Text style={s.theadCellR}>Combined</Text>
+                  <Text style={s.theadCellR}>% of Period</Text>
                 </View>
-                {monthly.map((row, i) => (
-                  <View key={`${row.yr}-${row.mo}`} style={i % 2 === 0 ? s.trow : s.trowAlt}>
-                    <Text style={[s.tcellBold]}>{row.period}</Text>
-                    <Text style={s.tcellR}>{row.entries.toLocaleString()}</Text>
-                    <Text style={[s.tcellR, { color: row.ieepaEntries > 0 ? '#b45309' : SLATE_L }]}>
-                      {row.ieepaEntries.toLocaleString()}
+                {months.map((m, i) => (
+                  <View key={m.key} style={m.key === peakKey ? s.trowPeak : (i % 2 === 0 ? s.trow : s.trowAlt)}>
+                    <Text style={s.tcellBold}>{m.label}{m.key === peakKey ? ' ★' : ''}</Text>
+                    <Text style={s.tcellR}>{m.ieepaDuty > 0 ? fmtM(m.ieepaDuty) : '—'}</Text>
+                    <Text style={[s.tcellR, { color: m.remediation > 0 ? AMBER : SLATE_L }]}>
+                      {m.remediation > 0 ? fmtM(m.remediation) : '—'}
                     </Text>
-                    <Text style={s.tcellR}>{fmtM(row.regularDuty)}</Text>
-                    <Text style={[s.tcellR, { color: row.sec301 > 0 ? PURPLE : SLATE_L }]}>
-                      {row.sec301 > 0 ? fmtM(row.sec301) : '—'}
+                    <Text style={[s.tcellAmt, { color: m.combined > 0 ? TEAL : SLATE_L }]}>
+                      {m.combined > 0 ? fmtM(m.combined) : '—'}
                     </Text>
-                    <Text style={[s.tcellR, { color: row.sec232 > 0 ? BLUE : SLATE_L }]}>
-                      {row.sec232 > 0 ? fmtM(row.sec232) : '—'}
-                    </Text>
-                    <Text style={[s.tcellR, { color: row.ieepaDuty > 0 ? AMBER : SLATE_L }]}>
-                      {row.ieepaDuty > 0 ? fmtM(row.ieepaDuty) : '—'}
-                    </Text>
-                    <Text style={[s.tcellR, { color: row.remediation > 0 ? RED : SLATE_L }]}>
-                      {row.remediation > 0 ? fmtM(row.remediation) : '—'}
-                    </Text>
+                    <Text style={s.tcellR}>{pct(m.combined, ieepaImpact)}</Text>
                   </View>
                 ))}
-                {/* Totals row */}
                 <View style={s.tfoot}>
                   <Text style={[s.tcellBold]}>Total</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>
-                    {kpis.totalEntries.toLocaleString()}
-                  </Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                    {kpis.ieepaEntries.toLocaleString()}
-                  </Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>{fmtM(kpis.regularDuty)}</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: PURPLE }]}>{fmtM(kpis.sec301)}</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: BLUE }]}>{fmtM(kpis.sec232)}</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: AMBER }]}>{fmtM(kpis.ieepaDuty)}</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: RED }]}>{fmtM(kpis.remediationDuty)}</Text>
+                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>{fmtM(kpis.ieepaDuty)}</Text>
+                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: AMBER }]}>{fmtM(kpis.remediationDuty)}</Text>
+                  <Text style={[s.tcellAmt, { color: TEAL }]}>{fmtM(ieepaImpact)}</Text>
+                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>100.0%</Text>
                 </View>
+              </View>
+              <Text style={{ fontSize: 6, color: GREEN, marginTop: -2 }}>★ Peak month</Text>
+            </>
+          )}
+
+          {insights.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>Key Insights</Text>
+              <View style={s.insightRow}>
+                {insights.map((ins) => (
+                  <View key={ins.title} style={s.insightCard}>
+                    <Text style={s.insightTitle}>{ins.title}</Text>
+                    <Text style={s.insightBody}>{ins.text}</Text>
+                  </View>
+                ))}
               </View>
             </>
           )}
 
-          {/* Key insights */}
-          <Text style={s.sectionTitle}>Key Insights</Text>
-          <View style={s.insightRow}>
-            <View style={[s.insightCard, s.insightAmber]}>
-              <Text style={[s.insightTitle, { color: '#92400e' }]}>IEEPA Exposure</Text>
-              <Text style={s.insightBody}>
-                {pct(ieepaImpact, kpis.totalDuty)} of all duties are IEEPA-related
-                ({fmtM(ieepaImpact)} combined). This represents a significant
-                compliance and cost burden requiring proactive management and
-                HTS classification review.
-              </Text>
-            </View>
-            <View style={[s.insightCard, s.insightBlue]}>
-              <Text style={[s.insightTitle, { color: '#1e40af' }]}>Entry Rate</Text>
-              <Text style={s.insightBody}>
-                {pct(kpis.ieepaEntries, kpis.totalEntries)} of entries (
-                {kpis.ieepaEntries.toLocaleString()} of {kpis.totalEntries.toLocaleString()})
-                carry IEEPA duty. Evaluate classification and country-of-origin
-                for exclusion or first-sale valuation opportunities.
-              </Text>
-            </View>
-            <View style={[s.insightCard, s.insightTeal]}>
-              <Text style={[s.insightTitle, { color: '#0f766e' }]}>Reciprocal Impact</Text>
-              <Text style={s.insightBody}>
-                Liberation Day reciprocal tariffs add {fmtM(kpis.remediationDuty)} on
-                top of baseline IEEPA duties. Review country-of-origin documentation
-                and consider supply chain diversification to reduce exposure.
-              </Text>
-            </View>
-          </View>
-
-          {/* Disclaimer */}
-          <View style={{ marginTop: 20, padding: 10, backgroundColor: SLATE_BG, borderRadius: 4, borderWidth: 1, borderColor: BORDER }}>
-            <Text style={{ fontSize: 6.5, color: SLATE_L, lineHeight: 1.5 }}>
+          <View style={s.disclaimer}>
+            <Text style={s.disclaimerText}>
               This report was generated by the JD Group Trade Portal based on USENTRY data for the selected period.
-              Figures reflect duty amounts as recorded at time of entry. IEEPA and Reciprocal duty fields reflect
-              DUTY_SEC_IEEPA and REMEDIATION_DUTY columns respectively. This document is confidential and intended
+              Figures reflect duty amounts as recorded at time of entry. This document is confidential and intended
               solely for the use of the named client and their authorized representatives.
             </Text>
           </View>
-
         </View>
 
-        {/* Footer */}
-        <View style={s.footer} fixed>
-          <Text style={s.footerText}>JD Group — IEEPA Tariff Analysis · Confidential</Text>
-          <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-        </View>
+        <Footer />
       </Page>
+
     </Document>
   )
 }

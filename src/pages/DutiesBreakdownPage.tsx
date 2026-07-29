@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns'
-import { ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers, Download,
+} from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend, PieChart, Pie, Cell,
@@ -11,6 +13,8 @@ import { SearchButton } from '@/components/ui/SearchButton'
 import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
+import { captureElement } from '@/utils/chartCapture'
+import { downloadHtsBreakdownPdf } from '@/utils/htsBreakdownReportPdf'
 import {
   fetchHtsBreakdown, fetchHtsEntries, fetchIeepaMonthly,
   type HtsBreakdownResponse, type HtsBreakdownRow, type HtsEntryRow, type IeepaMonthRow,
@@ -58,12 +62,18 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 
 type SortKey = 'hts' | 'enteredValue' | 'regularDuty' | 'sec301' | 'sec232' | 'ieepa' | 'totalDuty'
 
+const PAGE_SIZE = 100
+
 export function DutiesBreakdownPage() {
   useClients()
   const { selectedClient } = useClientStore()
   const { dateFrom, dateTo, searchTrigger } = useDateStore()
 
   const [data, setData] = useState<HtsBreakdownResponse | null>(null)
+  // Page-1 rows, frozen across grid pagination — the Top-10 chart, current-vs-prior
+  // comparison, and effective-rate chart must always reflect the true global top 10
+  // by duty, not whatever page the grid happens to be showing.
+  const [chartRows, setChartRows] = useState<HtsBreakdownRow[]>([])
   const [monthly, setMonthly] = useState<IeepaMonthRow[]>([])
   const [loading, setLoading] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('totalDuty')
@@ -81,11 +91,27 @@ export function DutiesBreakdownPage() {
     genRef.current += 1
     setLoading(true)
     setExpanded({})
-    Promise.all([fetchHtsBreakdown(params), fetchIeepaMonthly(params)])
-      .then(([b, m]) => { setData(b); setMonthly(m) })
+    Promise.all([
+      fetchHtsBreakdown({ ...params, page: 1, limit: PAGE_SIZE }),
+      fetchIeepaMonthly(params),
+    ])
+      .then(([b, m]) => { setData(b); setChartRows(b.current); setMonthly(m) })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [searchTrigger, selectedClient?.coKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function loadPage(p: number) {
+    // Guard against out-of-order responses: a quick double-click on Next can
+    // fire two overlapping requests, and without this check the older page's
+    // response could resolve last and clobber the newer one.
+    const gen = (genRef.current += 1)
+    setExpanded({})
+    setLoading(true)
+    fetchHtsBreakdown({ ...params, page: p, limit: PAGE_SIZE })
+      .then((b) => { if (genRef.current === gen) setData(b) })
+      .catch(console.error)
+      .finally(() => { if (genRef.current === gen) setLoading(false) })
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDesc((d) => !d)
@@ -121,7 +147,7 @@ export function DutiesBreakdownPage() {
 
   const BUCKET_COLORS = { regular: '#0f766e', sec301: '#f59e0b', sec232: '#6366f1', ieepa: '#dc2626', other: '#94a3b8' }
 
-  const top10 = rowsByDuty(data?.current ?? []).slice(0, 10)
+  const top10 = rowsByDuty(chartRows).slice(0, 10)
   const priorByHts = new Map((data?.prior ?? []).map((r) => [r.hts, r.totalDuty]))
   const compareData = top10.map((r) => ({
     hts: formatHts(r.hts), Current: r.totalDuty, Prior: priorByHts.get(r.hts) ?? 0,
@@ -148,6 +174,37 @@ export function DutiesBreakdownPage() {
     .filter((r) => r.enteredValue > 0)
     .map((r) => ({ hts: formatHts(r.hts), 'Effective Rate %': (r.totalDuty / r.enteredValue) * 100 }))
 
+  const compareChartRef = useRef<HTMLDivElement>(null)
+  const trendChartRef = useRef<HTMLDivElement>(null)
+  const donutChartRef = useRef<HTMLDivElement>(null)
+  const rateChartRef = useRef<HTMLDivElement>(null)
+  const [exportingPdf, setExportingPdf] = useState(false)
+
+  const handleDownloadPdf = async () => {
+    if (!t) return
+    setExportingPdf(true)
+    try {
+      const [compareChartImg, trendChartImg, donutImg, rateChartImg] = await Promise.all([
+        captureElement(compareChartRef.current),
+        captureElement(trendChartRef.current),
+        captureElement(donutChartRef.current),
+        captureElement(rateChartRef.current),
+      ])
+      await downloadHtsBreakdownPdf({
+        totals: t,
+        priorTotals: data?.totals.prior ?? t,
+        topRows: rowsByDuty(chartRows),
+        rowsTotal: data?.total ?? chartRows.length,
+        dateFrom: data?.dateFrom,
+        dateTo: data?.dateTo,
+        clientName: selectedClient?.name,
+        compareChartImg, trendChartImg, donutImg, rateChartImg,
+      }, `HTS_Breakdown_Report_${selectedClient?.coKey ?? 'all-clients'}_${dateFrom}_to_${dateTo}.pdf`)
+    } finally {
+      setExportingPdf(false)
+    }
+  }
+
   const SortHeader = ({ k, label, right = true }: { k: SortKey; label: string; right?: boolean }) => (
     <th
       onClick={() => toggleSort(k)}
@@ -170,8 +227,17 @@ export function DutiesBreakdownPage() {
             Loading…
           </span>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
           <h1 className="text-sm font-semibold text-slate-700">Duties Paid — HTS Breakdown</h1>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={exportingPdf || !t}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-teal-700 hover:text-teal-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Download PDF report"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportingPdf ? 'Generating…' : 'Download PDF'}
+          </button>
         </div>
       </div>
 
@@ -191,69 +257,84 @@ export function DutiesBreakdownPage() {
       {/* Chart row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Top 10 HTS — Current vs Prior Period">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={compareData} layout="vertical" margin={{ left: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: number) => fmtUSD(v)} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Current" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
-              <Bar dataKey="Prior"   fill={BUCKET_COLORS.other}   radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div ref={compareChartRef}>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={compareData} layout="vertical" margin={{ left: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => fmtUSD(v)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Current" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
+                <Bar dataKey="Prior"   fill={BUCKET_COLORS.other}   radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
         <ChartCard title="Monthly Duty Trend by Type">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: number) => fmtUSD(v)} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Regular" stackId="d" fill={BUCKET_COLORS.regular} />
-              <Bar dataKey="Sec 301" stackId="d" fill={BUCKET_COLORS.sec301} />
-              <Bar dataKey="Sec 232" stackId="d" fill={BUCKET_COLORS.sec232} />
-              <Bar dataKey="IEEPA"   stackId="d" fill={BUCKET_COLORS.ieepa} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div ref={trendChartRef}>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                <YAxis tickFormatter={fmtUSD} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => fmtUSD(v)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Regular" stackId="d" fill={BUCKET_COLORS.regular} />
+                <Bar dataKey="Sec 301" stackId="d" fill={BUCKET_COLORS.sec301} />
+                <Bar dataKey="Sec 232" stackId="d" fill={BUCKET_COLORS.sec232} />
+                <Bar dataKey="IEEPA"   stackId="d" fill={BUCKET_COLORS.ieepa} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
       </div>
 
       {/* Chart row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Duty Composition">
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                {donutData.map((d) => <Cell key={d.name} fill={d.color} />)}
-              </Pie>
-              <Tooltip formatter={(v: number) => fmtUSD(v)} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
+          <div ref={donutChartRef}>
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                  {donutData.map((d) => <Cell key={d.name} fill={d.color} />)}
+                </Pie>
+                <Tooltip formatter={(v: number) => fmtUSD(v)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
         <ChartCard title="Effective Duty Rate — Top HTS">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={rateData} layout="vertical" margin={{ left: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" tickFormatter={(v: number) => `${v.toFixed(0)}%`} tick={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} />
-              <Bar dataKey="Effective Rate %" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div ref={rateChartRef}>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={rateData} layout="vertical" margin={{ left: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={(v: number) => `${v.toFixed(0)}%`} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="hts" width={90} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} />
+                <Bar dataKey="Effective Rate %" fill={BUCKET_COLORS.regular} radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
       </div>
 
       {/* HTS table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700">Duties by HTS Code</h2>
-          {data && (
-            <p className="text-[11px] text-slate-400">
-              {format(parseISO(data.dateFrom), 'MMM d, yyyy')} – {format(parseISO(data.dateTo), 'MMM d, yyyy')}
-            </p>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-700">Duties by HTS Code</h2>
+            {data && (
+              <p className="text-[11px] text-slate-400">
+                {format(parseISO(data.dateFrom), 'MMM d, yyyy')} – {format(parseISO(data.dateTo), 'MMM d, yyyy')}
+              </p>
+            )}
+          </div>
+          {data && data.total > 0 && (
+            <span className="text-[11px] text-slate-400">
+              {(data.page - 1) * data.limit + 1}–{Math.min(data.page * data.limit, data.total)} of {data.total} HTS codes
+            </span>
           )}
         </div>
         <div className="overflow-x-auto">
@@ -345,6 +426,29 @@ export function DutiesBreakdownPage() {
             )}
           </table>
         </div>
+        {data && data.total > data.limit && (
+          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              Page {data.page} of {Math.ceil(data.total / data.limit)}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => loadPage(data.page - 1)}
+                disabled={data.page === 1 || loading}
+                className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => loadPage(data.page + 1)}
+                disabled={data.page >= Math.ceil(data.total / data.limit) || loading}
+                className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

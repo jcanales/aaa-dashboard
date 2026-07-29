@@ -212,6 +212,9 @@ export interface HtsBreakdownResponse {
   current:   HtsBreakdownRow[]
   prior:     HtsBreakdownRow[]
   totals:    { current: HtsBreakdownTotals; prior: HtsBreakdownTotals }
+  page:      number
+  limit:     number
+  total:     number
   dateFrom:  string
   dateTo:    string
   priorFrom: string
@@ -238,8 +241,10 @@ export async function fetchHtsBreakdown(params: {
   coKey?:    string
   dateFrom?: string
   dateTo?:   string
+  page?:     number
+  limit?:    number
 }): Promise<HtsBreakdownResponse> {
-  return get<HtsBreakdownResponse>('/entries/hts-breakdown', params as Record<string, string | undefined>)
+  return get<HtsBreakdownResponse>('/entries/hts-breakdown', params as Record<string, string | number | undefined>)
 }
 
 export async function fetchHtsEntries(params: {

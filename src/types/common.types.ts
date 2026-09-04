@@ -1,9 +1,13 @@
+// staff: FTZ Converter only. coordinator / manager: full portal access.
+// admin: full portal access, reserved for future admin-only functionality.
+export type UserRole = 'staff' | 'coordinator' | 'manager' | 'admin'
+
 export interface User {
   username:     string
   name:         string
   companyCode:  string
   companyName:  string
-  role?:        'viewer' | 'broker' | 'admin'
+  role?:        UserRole
   clientCoKeys: string[]   // MST CO_KEY values this user may access; empty = all (admin/broker)
 }
 

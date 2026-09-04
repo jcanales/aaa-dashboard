@@ -7,6 +7,7 @@ import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
 import { fetchStatements, type StatementRow } from '@/api/abiApi'
+import { TableRowsSkeleton } from '@/components/ui/Skeleton'
 
 function fmtUSD(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -79,14 +80,17 @@ export function AbiStatementsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {loading && (
+                <tr><td colSpan={8} className="p-0"><TableRowsSkeleton rows={8} cols={8} /></td></tr>
+              )}
+              {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-8 text-slate-400">
-                    {loading ? 'Loading…' : 'No statements found'}
+                    No statements found
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
+              {!loading && rows.map((r) => (
                 <tr key={r.recid} className="border-b border-slate-50 hover:bg-slate-50">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{r.stmtNo}</td>
                   <td className="px-4 py-2.5 text-slate-500">

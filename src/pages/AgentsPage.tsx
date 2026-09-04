@@ -4,6 +4,7 @@ import { fetchAgentSkills, streamAgentChat, type AgentSkillMeta, type AgentSkill
 import { useClientStore } from '@/store/clientStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Sk } from '@/components/ui/Skeleton'
 
 const CATEGORY_COLORS: Record<string, string> = {
   blue:   'bg-blue-100 text-blue-700 border-blue-200',
@@ -123,7 +124,17 @@ export function AgentsPage() {
         </div>
         <div className="flex-1 overflow-y-auto">
           {!manifest && (
-            <div className="p-4 text-xs text-slate-400 text-center">Loading agents…</div>
+            <div className="divide-y divide-slate-50">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                    <Sk className="h-3 w-2/3" />
+                    <Sk className="h-2.5 w-4/5" />
+                  </div>
+                  <Sk className="h-4 w-10 rounded" />
+                </div>
+              ))}
+            </div>
           )}
           {manifest?.categories.map((cat) => {
             const catSkills = manifest.skills.filter((s) => s.category === cat.id)

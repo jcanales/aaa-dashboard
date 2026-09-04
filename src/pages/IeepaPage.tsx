@@ -11,6 +11,7 @@ import {
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
 import { SearchButton } from '@/components/ui/SearchButton'
+import { Sk, KpiCardSkeleton, ChartCardSkeleton, TableRowsSkeleton } from '@/components/ui/Skeleton'
 import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
@@ -32,6 +33,33 @@ function pctNum(part: number, total: number) { return total > 0 ? (part / total)
 function pctStr(part: number, total: number) { return `${pctNum(part, total).toFixed(1)}%` }
 
 const DONUT_COLORS = { regular: '#073b49', sec301: '#3A6FF9', sec232: '#077a96', ieepa: '#f59e0b', remed: '#ef4444' }
+
+function IeepaPageSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map((i) => <KpiCardSkeleton key={i} />)}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => <KpiCardSkeleton key={i} />)}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2"><ChartCardSkeleton height={240} /></div>
+        <ChartCardSkeleton height={240} />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCardSkeleton height={220} />
+        <ChartCardSkeleton height={220} />
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100">
+          <Sk className="h-3.5 w-56" />
+        </div>
+        <TableRowsSkeleton rows={10} cols={8} />
+      </div>
+    </>
+  )
+}
 
 // ── Month range helper ───────────────────────────────────────────────────────
 // USENTRY.DUTY (surfaced here as regularDuty) is the header grand-total duty,
@@ -330,6 +358,10 @@ export function IeepaPage() {
         </p>
       </div>
 
+      {loading ? (
+        <IeepaPageSkeleton />
+      ) : (
+      <>
       {/* KPI grid */}
       <div>
         <div className="flex items-center justify-between mb-2.5 border-b border-slate-200 pb-1.5">
@@ -604,6 +636,8 @@ export function IeepaPage() {
             ))}
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Footer */}

@@ -95,6 +95,13 @@ model User {
   passwordHash  String
   clientCoKeys  String[] @default([])
   createdAt     DateTime @default(now())
+
+  // FTZ Converter fields
+  username         String?          @unique
+  active           Boolean          @default(true)
+  conversions       Conversion[]
+  validatedLayouts  InvoiceLayout[] @relation("LayoutValidator")
+  operations        Operation[]
 }
 
 model AiAuditLog {
@@ -104,4 +111,178 @@ model AiAuditLog {
   response  String
   changeId  String?
   createdAt DateTime @default(now())
+}
+
+// ── FTZ Converter (ported from AAA-Converter) ──────────────────────────────────
+
+model InvoiceLayout {
+  id            String       @id @default(uuid())
+  label         String?
+  fingerprint   Json
+  fieldMap      Json
+  // detected: auto-registered, not yet matched against new invoices.
+  // validated: an admin confirmed it — findMatchingLayout uses only these.
+  // rejected: an admin declined it — never matched.
+  status        String       @default("detected")
+  validatedAt   DateTime?
+  validatedById String?
+  validatedBy   User?        @relation("LayoutValidator", fields: [validatedById], references: [id])
+  createdAt     DateTime     @default(now())
+  conversions   Conversion[]
+
+  @@index([status])
+}
+
+// Per-template enable flag for the deterministic parsers. `id` is the
+// TemplateParser.id string. Absent row = enabled (the default).
+model TemplateSetting {
+  id        String   @id
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// JD Group's FTZ zone constants. Single row (id 'default'); its applicationInfo
+// and header maps pre-fill every new conversion so the operator only fills the
+// shipment-specific fields.
+model Facility {
+  id              String   @id @default("default")
+  applicationInfo Json     @default("{}")
+  header          Json     @default("{}")
+  updatedAt       DateTime @updatedAt
+}
+
+// An FTZ importer whose goods JD Group admits. Distinct from the tariff-monitoring
+// `Client` model above — `companyKey` is the EDI Company Key assigned by
+// RBSystems/Broker; `irsNumber` is the "IRS:" value printed in the invoice's
+// "Imported by" block, the key that maps an invoice to a client.
+model FtzClient {
+  id         String   @id @default(uuid())
+  name       String
+  irsNumber  String?
+  companyKey String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([irsNumber])
+}
+
+model Conversion {
+  id              String         @id @default(uuid())
+  pdfFilename     String
+  status          String         @default("draft")
+  extractionError String?
+  // Wall-clock time runExtraction spent parsing (deterministic + AI fallback),
+  // captured once when the row leaves 'processing'. Null for rows created
+  // before this column existed. Not the same as updatedAt - createdAt, which
+  // drifts on every later edit.
+  extractionDurationMs Int?
+  applicationData Json
+  headerData      Json
+  detailData      Json
+  xml             String?
+  parseSource     String?
+  parseWarnings   Json?
+  // The uploaded PDF, kept so the review page can show it side-by-side.
+  pdfData         Bytes?
+  // Per-line {page, yTop, yBottom} in PDF points (top-left origin) for the
+  // deterministic path, so clicking a review line scrolls the PDF to it.
+  lineAnchors     Json?
+  createdById     String
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  layoutId        String?
+  layout          InvoiceLayout? @relation(fields: [layoutId], references: [id], onDelete: SetNull)
+  operationMember OperationMember?
+  ftzAllocation   FtzAllocation?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([createdById])
+  @@index([layoutId])
+}
+
+// One row per FTZ admission number this system has handed out. `number` is the
+// primary key, so two conversions can never be assigned the same value even
+// under a race. Allocated at XML-generation time (see ftzAllocationService).
+model FtzAllocation {
+  number       Int         @id
+  conversionId String?     @unique
+  conversion   Conversion? @relation(fields: [conversionId], references: [id], onDelete: Cascade)
+  operationId  String?     @unique
+  operation    Operation?  @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+}
+
+// A grouped FTZ 214 operation: several invoice Conversions combined into one
+// admission. Shared fields + merged lines are snapshotted here at creation.
+model Operation {
+  id               String            @id @default(uuid())
+  name             String?
+  status           String            @default("draft") // draft | generated
+  applicationData  Json
+  headerData       Json
+  billOfLadingData Json
+  detailData       Json              // { lines: LineData[] }, each line has _source
+  xml              String?
+  createdById      String
+  createdBy        User              @relation(fields: [createdById], references: [id])
+  members          OperationMember[]
+  ftzAllocation    FtzAllocation?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([createdById])
+}
+
+model OperationMember {
+  id           String     @id @default(uuid())
+  operationId  String
+  operation    Operation  @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  conversionId String     @unique
+  conversion   Conversion @relation(fields: [conversionId], references: [id], onDelete: Cascade)
+  position     Int
+  createdAt    DateTime   @default(now())
+
+  @@unique([operationId, conversionId])
+  @@index([operationId])
+}
+
+// One row per authenticated /api/converter/* request. No FK to User: the row
+// must outlive user deletion and is written fire-and-forget. See
+// converter/middleware/accessLog.ts.
+model AccessLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  username   String?
+  method     String
+  route      String
+  path       String
+  query      String?
+  statusCode Int
+  rowCount   Int?
+  ip         String?
+  userAgent  String?
+  durationMs Int
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// Raised by converter/services/accessLogService.checkReadVolume when a user's
+// read rate is abnormal.
+model SecurityAlert {
+  id               String    @id @default(uuid())
+  userId           String?
+  username         String?
+  kind             String
+  detail           String
+  windowFrom       DateTime
+  windowTo         DateTime
+  readCount        Int
+  createdAt        DateTime  @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+
+  @@index([createdAt])
+  @@index([acknowledgedAt])
 }

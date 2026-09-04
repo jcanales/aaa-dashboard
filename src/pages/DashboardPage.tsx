@@ -8,6 +8,7 @@ import { TrendingUp, TrendingDown, Clock, Package, DollarSign, AlertTriangle } f
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
 import { SearchButton } from '@/components/ui/SearchButton'
+import { Sk, KpiCardSkeleton, ChartCardSkeleton, TableRowsSkeleton } from '@/components/ui/Skeleton'
 import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
@@ -69,6 +70,24 @@ const STATUS_COLORS: Record<string, string> = {
   pending:    'bg-amber-100 text-amber-700',
   released:   'bg-emerald-100 text-emerald-700',
   liquidated: 'bg-blue-100 text-blue-700',
+}
+
+function DashboardPageSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {[0, 1, 2, 3, 4].map((i) => <KpiCardSkeleton key={i} />)}
+      </div>
+      <ChartCardSkeleton height={240} />
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <Sk className="h-3.5 w-20" />
+          <Sk className="h-3 w-16" />
+        </div>
+        <TableRowsSkeleton rows={8} cols={8} />
+      </div>
+    </>
+  )
 }
 
 export function DashboardPage() {
@@ -134,6 +153,10 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {loading ? (
+        <DashboardPageSkeleton />
+      ) : (
+      <>
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard
@@ -266,6 +289,8 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

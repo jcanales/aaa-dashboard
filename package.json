@@ -7,9 +7,9 @@
     "dev": "VITE_API_URL=http://localhost:3001/api vite --port 5175",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "server": "npm run dev --prefix server",
-    "server:build": "npm run build --prefix server",
-    "server:start": "npm run start --prefix server"
+    "server": "npm run dev --prefix backend",
+    "server:build": "npm run build --prefix backend",
+    "server:start": "npm run start --prefix backend"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.0",
@@ -29,9 +29,11 @@
     "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.460.0",
     "papaparse": "^5.4.1",
+    "pdfjs-dist": "3.11.174",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
+    "react-dropzone": "^14.2.3",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
     "tailwind-merge": "^2.5.4",

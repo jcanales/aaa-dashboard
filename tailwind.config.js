@@ -67,6 +67,11 @@ export default {
           800: "#073b49",
           900: "#042630",
         },
+        navy: {
+          DEFAULT: "#073b49",
+          800: "#073b49",
+          700: "#054d60",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -75,7 +80,7 @@ export default {
         full: "9999px",
       },
       fontFamily: {
-        sans: ["Helvetica Neue", "Helvetica", "Arial", "system-ui", "sans-serif"],
+        sans: ["-apple-system", "system-ui", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", "sans-serif"],
       },
       keyframes: {
         "accordion-down": {
@@ -86,10 +91,14 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        shimmer: "shimmer 1.3s ease-in-out infinite",
       },
     },
   },

@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns'
 import { AlertTriangle, Bell, CheckCircle, Clock, EyeOff, Tag } from 'lucide-react'
 import { fetchChanges, fetchKpis, reviewChange } from '@/api/tariffApi'
 import type { TariffChange, TariffKpis } from '@/types/tariff.types'
+import { Sk, KpiCardSkeleton } from '@/components/ui/Skeleton'
 
 function impactColor(score: number): string {
   if (score >= 8) return 'text-red-600 bg-red-50 border-red-200'
@@ -88,13 +89,17 @@ export function TariffPage() {
       </div>
 
       {/* KPI tiles */}
-      {kpis && (
+      {kpis ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiTile label="Changes today"       value={kpis.changesToday}        icon={<Tag className="h-5 w-5" />} />
           <KpiTile label="Pending review"       value={kpis.pendingReview}       icon={<Clock className="h-5 w-5 text-amber-500" />} />
           <KpiTile label="Alerts this week"     value={kpis.alertsSentThisWeek}  icon={<Bell className="h-5 w-5" />} />
           <KpiTile label="Clients affected"     value={kpis.clientsAffected}     icon={<AlertTriangle className="h-5 w-5" />} />
           <KpiTile label="Highest impact score" value={kpis.highestImpactScore}  icon={<CheckCircle className="h-5 w-5 text-red-500" />} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[0, 1, 2, 3, 4].map((i) => <KpiCardSkeleton key={i} />)}
         </div>
       )}
 
@@ -116,13 +121,23 @@ export function TariffPage() {
           </div>
 
           <div className="divide-y divide-slate-50">
-            {loading && changes.length === 0 && (
-              <div className="py-8 text-center text-xs text-slate-400">Loading…</div>
+            {loading && (
+              <div className="divide-y divide-slate-50">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="px-4 py-3 flex flex-col gap-2">
+                    <Sk className="h-3 w-3/4" />
+                    <div className="flex items-center gap-2">
+                      <Sk className="h-3 w-14" />
+                      <Sk className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
             {!loading && changes.length === 0 && (
               <div className="py-8 text-center text-xs text-slate-400">No changes found</div>
             )}
-            {changes.map((c) => (
+            {!loading && changes.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelectedChange(c)}

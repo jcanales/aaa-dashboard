@@ -36,7 +36,10 @@ export function TopBar({ onMobileMenuToggle }: TopBarProps) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="p-1.5 rounded hover:bg-slate-100 transition-colors" aria-label="Notifications">
+        <button
+          className="flex items-center justify-center h-9 w-9 rounded hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0E7490] focus-visible:ring-offset-2"
+          aria-label="Notifications"
+        >
           <Bell className="h-4 w-4 text-slate-500" />
         </button>
         {user && (

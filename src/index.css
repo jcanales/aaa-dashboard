@@ -48,3 +48,38 @@
   z-index: 10;
   background: white;
 }
+
+/* Recharts: without this, an offset data label on the topmost point of any
+   chart (e.g. the % va callout) gets clipped by the SVG boundary. */
+.recharts-surface,
+.recharts-wrapper {
+  overflow: visible;
+}
+
+/* ── Type scale tokens ──────────────────────────────────────────────────
+   Defined once here and applied via className rather than repeating raw
+   text-size/weight/line-height values at every call site. */
+@layer components {
+  .text-page-title {
+    @apply text-[28px] font-bold leading-9 tracking-[-0.02em] text-slate-800;
+  }
+  .text-page-subtitle {
+    @apply text-[13px] leading-[18px] text-slate-500;
+  }
+  .text-kpi-value {
+    @apply text-[30px] font-bold tracking-[-0.02em];
+    font-variant-numeric: tabular-nums;
+  }
+  .text-card-title {
+    @apply text-base font-semibold leading-6 text-slate-800;
+  }
+  .text-kpi-label {
+    @apply text-[13px] font-medium text-slate-600;
+  }
+  .text-comparison-delta {
+    @apply text-[13px] text-slate-600;
+  }
+  .text-eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.09em];
+  }
+}

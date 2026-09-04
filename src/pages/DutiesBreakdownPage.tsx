@@ -10,6 +10,7 @@ import {
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
 import { SearchButton } from '@/components/ui/SearchButton'
+import { Sk, KpiCardSkeleton, ChartCardSkeleton, TableRowsSkeleton } from '@/components/ui/Skeleton'
 import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
@@ -57,6 +58,30 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
       <h2 className="text-sm font-semibold text-slate-700 mb-3">{title}</h2>
       {children}
     </div>
+  )
+}
+
+function DutiesBreakdownPageSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {[0, 1, 2, 3, 4].map((i) => <KpiCardSkeleton key={i} />)}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCardSkeleton height={280} />
+        <ChartCardSkeleton height={280} />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCardSkeleton height={280} />
+        <ChartCardSkeleton height={280} />
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100">
+          <Sk className="h-3.5 w-48" />
+        </div>
+        <TableRowsSkeleton rows={10} cols={10} />
+      </div>
+    </>
   )
 }
 
@@ -241,6 +266,10 @@ export function DutiesBreakdownPage() {
         </div>
       </div>
 
+      {loading && !data ? (
+        <DutiesBreakdownPageSkeleton />
+      ) : (
+      <>
       {/* KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard title="Total Duties"   value={fmtUSD(t?.totalDuty ?? 0)}
@@ -450,6 +479,8 @@ export function DutiesBreakdownPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

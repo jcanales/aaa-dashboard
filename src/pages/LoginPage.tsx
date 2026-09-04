@@ -13,8 +13,8 @@ const FEATURES = [
 ]
 
 export function LoginPage() {
-  const [username, setUsername] = useState('jcanales')
-  const [password, setPassword] = useState('demo1234')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -149,10 +149,6 @@ export function LoginPage() {
                 ) : 'Sign in'}
               </Button>
             </form>
-
-            <p className="mt-4 text-center text-[10px] text-slate-400">
-              Demo: jcanales / demo1234
-            </p>
           </div>
         </div>
       </div>

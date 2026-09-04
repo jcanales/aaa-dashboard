@@ -286,7 +286,7 @@ graph TB
   <!-- ─── Diagram 2 ─────────────────────────────────────── -->
   <div class="diagram-section" id="d2">
     <h2>2 · Business Rule — Per-Client Access Scoping</h2>
-    <p><code>server/src/api/entryScope.ts</code> is the single source of truth for role-based row scoping against the legacy MSSQL tables. <code>null</code> = unrestricted (admin/broker); an array (possibly empty) scopes the caller to specific <code>CO_KEY</code>s.</p>
+    <p><code>backend/src/api/entryScope.ts</code> is the single source of truth for role-based row scoping against the legacy MSSQL tables. <code>null</code> = unrestricted (admin/broker); an array (possibly empty) scopes the caller to specific <code>CO_KEY</code>s.</p>
     <div class="zoom-wrap">
       <div class="zoom-controls">
         <button class="zoom-btn" onclick="pzAction(1,'in')" title="Zoom in">+</button>
@@ -349,7 +349,7 @@ sequenceDiagram
   <!-- ─── Diagram 3 ─────────────────────────────────────── -->
   <div class="diagram-section" id="d3">
     <h2>3 · Business Rule — Chapter-99 Duty Bucket Classification</h2>
-    <p><code>server/src/api/htsBuckets.ts</code> is the single source of truth for both the TypeScript classifier and the generated SQL predicates, used by every KPI/breakdown query that needs to split duty into Section&nbsp;301 / Section&nbsp;232 / IEEPA / other Chapter-99 buckets.</p>
+    <p><code>backend/src/api/htsBuckets.ts</code> is the single source of truth for both the TypeScript classifier and the generated SQL predicates, used by every KPI/breakdown query that needs to split duty into Section&nbsp;301 / Section&nbsp;232 / IEEPA / other Chapter-99 buckets.</p>
     <div class="zoom-wrap tall">
       <div class="zoom-controls">
         <button class="zoom-btn" onclick="pzAction(2,'in')" title="Zoom in">+</button>
@@ -514,7 +514,7 @@ sequenceDiagram
   <!-- ─── Diagram 6 ─────────────────────────────────────── -->
   <div class="diagram-section" id="d6">
     <h2>6 · Business Rule — HTS Portfolio Matching &amp; Duty Impact</h2>
-    <p><code>server/src/matching/clientMatcher.ts</code> and <code>impactCalculator.ts</code> — most-specific-first HTS matching and the duty-impact estimate attached to each match.</p>
+    <p><code>backend/src/matching/clientMatcher.ts</code> and <code>impactCalculator.ts</code> — most-specific-first HTS matching and the duty-impact estimate attached to each match.</p>
     <div class="zoom-wrap">
       <div class="zoom-controls">
         <button class="zoom-btn" onclick="pzAction(5,'in')" title="Zoom in">+</button>
@@ -563,7 +563,7 @@ flowchart LR
   <!-- ─── Diagram 7 ─────────────────────────────────────── -->
   <div class="diagram-section" id="d7">
     <h2>7 · Database Schema — PostgreSQL (Prisma)</h2>
-    <p>Application-owned data: tariff intelligence pipeline state, client HTS portfolios, alert history, and users. Migrated with Prisma; see <code>server/prisma/schema.prisma</code>.</p>
+    <p>Application-owned data: tariff intelligence pipeline state, client HTS portfolios, alert history, and users. Migrated with Prisma; see <code>backend/prisma/schema.prisma</code>.</p>
     <div class="zoom-wrap tall">
       <div class="zoom-controls">
         <button class="zoom-btn" onclick="pzAction(6,'in')" title="Zoom in">+</button>
@@ -673,7 +673,7 @@ erDiagram
   <!-- ─── Diagram 8 ─────────────────────────────────────── -->
   <div class="diagram-section" id="d8">
     <h2>8 · Database Schema — Legacy SQL Server (read-only)</h2>
-    <p>The operational system of record for actual customs entries, lives outside this app. Duties Dashboard only issues scoped <code>SELECT</code>s against it — no writes. Connection config in <code>server/src/db/mssql.ts</code>.</p>
+    <p>The operational system of record for actual customs entries, lives outside this app. Duties Dashboard only issues scoped <code>SELECT</code>s against it — no writes. Connection config in <code>backend/src/db/mssql.ts</code>.</p>
     <div class="zoom-wrap">
       <div class="zoom-controls">
         <button class="zoom-btn" onclick="pzAction(7,'in')" title="Zoom in">+</button>
@@ -761,7 +761,7 @@ erDiagram
       <strong>Inconsistent client-key column naming across legacy tables</strong> (<code>CUST_KEY</code> vs
       <code>IMP_KEY</code> vs <code>IMPOR_KEY</code>) is why the scoping helper can't be a single generic SQL
       fragment — see diagram&nbsp;2. <br/><br/>
-      <strong>Hardcoded credential fallback:</strong> <code>server/src/db/mssql.ts</code> falls back to a literal
+      <strong>Hardcoded credential fallback:</strong> <code>backend/src/db/mssql.ts</code> falls back to a literal
       server IP, DB name, username and password when the corresponding env vars are unset. This should be tightened
       (fail closed in production) rather than relying on env vars always being present.
     </div>

@@ -6,7 +6,7 @@ type: project
 
 Built 2026-04-08. Monitors US gov APIs for tariff changes, uses Claude AI to classify them, routes alerts through a broker review gate.
 
-**Backend location:** `/server/` — separate Node.js service, port 3001
+**Backend location:** `/backend/` — separate Node.js service, port 3001
 **Frontend location:** `/src/pages/tariff/` — 6 pages added to existing React app
 
 **Data sources polled:**
@@ -23,7 +23,7 @@ Built 2026-04-08. Monitors US gov APIs for tariff changes, uses Claude AI to cla
 
 **Auth:** JWT (8h), roles: broker/admin/viewer. Broker+admin can approve/suppress changes.
 
-**Tests:** 40 Vitest tests in server/tests/ covering sha256Differ, claudeClassifier JSON parsing, clientMatcher HTS prefix logic.
+**Tests:** 40 Vitest tests in backend/tests/ covering sha256Differ, claudeClassifier JSON parsing, clientMatcher HTS prefix logic.
 
 **Docker:** docker-compose.yml at root. Services: postgres, api, frontend (nginx reverse proxy).
 

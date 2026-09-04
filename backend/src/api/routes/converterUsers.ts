@@ -7,11 +7,19 @@ import {
   setUserPassword,
   findUserById,
   countActiveAdmins,
+  isActiveAdmin,
   DuplicateUserError,
   UserNotFoundError,
   LastActiveAdminError,
   type UpdateUserInput,
 } from '../../converter/services/converterUsersService';
+
+// coordinator/manager hold `requireRole` access to this whole router (to manage
+// FTZ Converter staff), but must not be able to mint or edit admin/manager/
+// coordinator accounts, or reset anyone's password, themselves — a JWT's role
+// claim is also up to 8h stale, so re-check the caller's *current* standing
+// against the DB rather than trusting req.user.role for anything admin-gated.
+const ADMIN_MANAGED_ROLES = new Set(['coordinator', 'manager', 'admin']);
 
 const router = Router();
 router.use(requireRole(['coordinator', 'manager', 'admin']));
@@ -71,6 +79,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   }
   if (role !== undefined && !roleOk(role)) {
     res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+    return;
+  }
+  if (role !== undefined && ADMIN_MANAGED_ROLES.has(role) && !(await isActiveAdmin(req.user!.userId))) {
+    res.status(403).json({ error: 'Only an admin can create coordinator, manager, or admin accounts' });
     return;
   }
 
@@ -150,6 +162,17 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Role changes, and any edit to an existing coordinator/manager/admin
+    // account, require the caller to be a *live* admin — otherwise a
+    // coordinator/manager could promote themselves (or anyone) to admin, or
+    // silently deactivate/rename another admin's account.
+    const targetIsAdminManaged = ADMIN_MANAGED_ROLES.has(target.role ?? '');
+    const needsLiveAdmin = input.role !== undefined || targetIsAdminManaged;
+    if (needsLiveAdmin && !(await isActiveAdmin(req.user!.userId))) {
+      res.status(403).json({ error: 'Only an admin can change roles or modify a coordinator, manager, or admin account' });
+      return;
+    }
+
     const isSelf = req.user!.userId === target.id;
     if (isSelf && input.role === 'staff') {
       res.status(400).json({ error: 'You cannot demote yourself to staff — you would lose access to this page' });
@@ -189,6 +212,14 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
 
 // POST /api/converter/users/:id/reset-password — admin sets a new password for any user.
 router.post('/:id/reset-password', async (req: Request, res: Response): Promise<void> => {
+  // No self-service "reset your own password with your old password" flow
+  // exists on this router (the UI only offers this from the admin Users
+  // tab) — so this stays a live-admin-only action, full stop.
+  if (!(await isActiveAdmin(req.user!.userId))) {
+    res.status(403).json({ error: 'Only an admin can reset a user\'s password' });
+    return;
+  }
+
   const { password } = req.body as { password?: unknown };
   const pwError = passwordError(password);
   if (pwError !== null) {

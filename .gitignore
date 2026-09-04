@@ -6,3 +6,5 @@ dist/
 datasync/airbyte-data/
 .superpowers/
 .worktrees/
+.design-canvas/
+test*

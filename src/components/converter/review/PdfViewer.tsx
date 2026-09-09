@@ -1,10 +1,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import * as pdfjs from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
+// pdfjs-dist v5+'s worker is ESM-only. A plain `?url` import (used pre-v5) makes
+// pdfjs construct `new Worker(url, { type: 'module' })` itself, which Vite's dev
+// server fails to serve correctly (the browser parses it as a classic script and
+// throws "Cannot use import statement outside a module", then pdfjs's fake-worker
+// fallback breaks too). `?worker` is Vite's own worker-import primitive — it
+// handles ESM module workers correctly in both dev and the production bundle.
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 import { ZoomIn, ZoomOut } from 'lucide-react'
 import { apiGetBlob } from '@/api/converterApi'
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker()
 
 export interface PdfViewerHandle {
   /** Scroll so the given PDF point (page, y-from-top in PDF units) sits near the top. */
@@ -55,7 +61,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function Pd
         const path = src ?? `/conversions/${conversionId}/pdf`
         const buf = await (await apiGetBlob(path)).arrayBuffer()
         if (generation.current !== myGen) return
-        docRef.current = await pdfjs.getDocument({ data: buf, isEvalSupported: false }).promise
+        // isEvalSupported no longer exists as of pdfjs-dist v5 — the eval-based
+        // code path it used to gate (CVE-2024-4367) was removed upstream instead.
+        docRef.current = await pdfjs.getDocument({ data: buf }).promise
         if (generation.current !== myGen) return
         setState('ready')
       } catch (err) {
@@ -115,7 +123,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function Pd
         host.appendChild(canvas)
         pageTops.current[n - 1] = canvas.offsetTop
         pageScales.current[n - 1] = scale
-        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+        await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise
         if (cancelled) return
       }
     })()

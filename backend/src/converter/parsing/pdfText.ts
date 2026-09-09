@@ -1,13 +1,13 @@
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.js';
 import type { Cell } from './types';
+import { loadPdfjs } from './pdfjsLoader';
 
 // pdfjs-dist logs harmless "Cannot polyfill DOMMatrix/Path2D" warnings in Node
 // when the optional `canvas` package isn't installed — safe to ignore, this
 // module only reads text content, it never rasterizes a page.
 export async function extractCells(pdfBase64: string): Promise<Cell[]> {
+  const { getDocument } = await loadPdfjs();
   const data = new Uint8Array(Buffer.from(pdfBase64, 'base64'));
-  // isEvalSupported:false — CVE-2024-4367; we only read text, never render
-  const doc = await getDocument({ data, isEvalSupported: false }).promise;
+  const doc = await getDocument({ data }).promise;
   const cells: Cell[] = [];
   let ord = 0;
   for (let p = 1; p <= doc.numPages; p++) {

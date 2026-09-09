@@ -13,8 +13,12 @@ export function isFieldEmpty(field: FieldDef, raw: unknown): boolean {
   return isEmptyScalar(raw)
 }
 
+export function getMissingMandatory(fields: FieldDef[], values: Record<string, unknown>): FieldDef[] {
+  return fields.filter((f) => f.designation === 'M' && isFieldEmpty(f, values[f.name]))
+}
+
 export function countMissingMandatory(fields: FieldDef[], values: Record<string, unknown>): number {
-  return fields.filter((f) => f.designation === 'M' && isFieldEmpty(f, values[f.name])).length
+  return getMissingMandatory(fields, values).length
 }
 
 // The wire format for every `type: 'D'` field is 8-char YYYYMMDD (fields.ts's

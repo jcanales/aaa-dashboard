@@ -9,7 +9,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { AddInvoicesPicker } from '@/components/converter/operations/AddInvoicesPicker'
 import { PdfTabs } from '@/components/converter/review/PdfTabs'
 import type { PdfViewerHandle } from '@/components/converter/review/PdfViewer'
-import { countMissingMandatory } from '@/lib/converter/validation'
+import { countMissingMandatory, getMissingMandatory } from '@/lib/converter/validation'
 import { flashElement } from '@/lib/converter/flashElement'
 import type { FieldValue, FieldValues } from '@/types/converter/ftz214.types'
 import type { FieldConflict, OperationDetail, OperationLine } from '@/types/converter/operation.types'
@@ -133,11 +133,57 @@ export function OperationReviewPage() {
   if (!operation || !fields) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const isReadOnly = operation.status === 'generated'
-  const missingCount =
-    countMissingMandatory(fields.applicationInformation, applicationData) +
-    countMissingMandatory(fields.header, headerData) +
-    countMissingMandatory(fields.billOfLading, billOfLadingData) +
-    lines.reduce((sum, line) => sum + countMissingMandatory(fields.line, line), 0)
+  // Named (not just counted) everywhere — including per line — so "which
+  // field" is always answerable without a round-trip to Generate's
+  // server-side error. A grouped operation can run to dozens of lines, but
+  // in practice only a handful ever come back empty, so naming each one
+  // (with its source filename) is signal, not noise.
+  const missingMandatoryFields = [
+    ...getMissingMandatory(fields.applicationInformation, applicationData).map((f) => ({
+      id: `field-appinfo-${f.name}`,
+      groupKey: null as string | null,
+      sectionLabel: 'App Info',
+      field: f,
+    })),
+    ...getMissingMandatory(fields.header, headerData).map((f) => ({
+      id: `field-header-${f.name}`,
+      groupKey: null as string | null,
+      sectionLabel: 'Header',
+      field: f,
+    })),
+    ...getMissingMandatory(fields.billOfLading, billOfLadingData).map((f) => ({
+      id: `field-bol-${f.name}`,
+      groupKey: null as string | null,
+      sectionLabel: 'Bill of Lading',
+      field: f,
+    })),
+    // Line fields live inside a collapsible per-source-file group — jumping to
+    // one first expands its group (groupKey), then flashes the field once
+    // it's actually mounted.
+    ...lines.flatMap((line, i) =>
+      getMissingMandatory(fields.line, line).map((f) => ({
+        id: `field-line-${i}-${f.name}`,
+        groupKey: line._source ?? MANUAL_KEY,
+        sectionLabel: `Line ${i + 1}${line._source ? ` (${line._source})` : ''}`,
+        field: f,
+      }))
+    ),
+  ]
+
+  function jumpToMissingField(target: { id: string; groupKey: string | null }) {
+    if (target.groupKey) {
+      setExpanded((prev) => (prev[target.groupKey!] ? prev : { ...prev, [target.groupKey!]: true }))
+      // The group's fields only mount once `expanded` flips — wait a tick.
+      requestAnimationFrame(() => {
+        const el = document.getElementById(target.id)
+        if (el) flashElement(el)
+      })
+      return
+    }
+    const el = document.getElementById(target.id)
+    if (el) flashElement(el)
+  }
+  const missingCount = missingMandatoryFields.length
 
   const groups = groupLines(lines)
   const activeConversionId = activePdf ?? operation.members[0]?.conversionId ?? null
@@ -297,6 +343,23 @@ export function OperationReviewPage() {
                   {missingCount} required field{missingCount === 1 ? '' : 's'} missing.
                 </div>
               )}
+              {missingMandatoryFields.length > 0 && (
+                <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {missingMandatoryFields.map((target) => (
+                    <li key={`${target.sectionLabel}-${target.field.name}`}>
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:no-underline"
+                        onClick={() => jumpToMissingField(target)}
+                      >
+                        {target.sectionLabel}: {target.field.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {/* Server-reported list (from a failed Generate attempt) — kept as a
+                  fallback for anything the client-side check above doesn't cover. */}
               {missingFields.length > 0 && (
                 <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                   {missingFields.map((path) => (

@@ -1,0 +1,136 @@
+# Deploys duties-dashboard (frontend + backend) directly on the office server.
+#
+# This server has no inbound internet access, so a GitHub-hosted runner could
+# never reach it over SSH. Instead this workflow runs ON a self-hosted runner
+# installed on that same server (see scripts/install-github-runner.sh) — the
+# runner polls GitHub over an outbound connection, so no inbound port is ever
+# needed. Because the runner already IS the deploy target, this workflow just
+# builds and copies files locally — no SSH/rsync-over-network required.
+#
+# Prerequisites (run once, in order):
+#   1. scripts/setup-server.sh          — Node, Docker, nginx, pm2, deploy user
+#   2. scripts/install-github-runner.sh — registers this box as a runner
+#
+# Required GitHub repo Secrets (Settings → Secrets and variables → Actions):
+#   JWT_SECRET      — required, backend refuses to start without it
+#   PG_PASSWORD     — password for the app's own Postgres container
+#   MSSQL_HOST, MSSQL_PORT, MSSQL_USER, MSSQL_PASSWORD, MSSQL_DATABASE
+#                   — legacy RB Systems SQL Server connection
+#   MSSQL_TRUST_SERVER_CERT, MSSQL_ENCRYPT — optional, "true"/"false"
+#
+# Nothing else needs configuring — no DEPLOY_HOST/PORT/SSH key, since the
+# runner already runs on the target box.
+
+name: Deploy to office server
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /opt/duties-dashboard
+  WEB_DIR: /var/www/duties-dashboard
+  BACKEND_PORT: 3001
+  PG_PORT: 5433
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, duties-dashboard]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Write backend .env
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
+          MSSQL_HOST: ${{ secrets.MSSQL_HOST }}
+          MSSQL_PORT: ${{ secrets.MSSQL_PORT }}
+          MSSQL_DATABASE: ${{ secrets.MSSQL_DATABASE }}
+          MSSQL_USER: ${{ secrets.MSSQL_USER }}
+          MSSQL_PASSWORD: ${{ secrets.MSSQL_PASSWORD }}
+          MSSQL_TRUST_SERVER_CERT: ${{ secrets.MSSQL_TRUST_SERVER_CERT }}
+          MSSQL_ENCRYPT: ${{ secrets.MSSQL_ENCRYPT }}
+        run: |
+          {
+            printf 'PORT=%s\n'                    "${BACKEND_PORT}"
+            printf 'JWT_SECRET=%s\n'               "$JWT_SECRET"
+            printf 'DATABASE_URL=%s\n'              "postgresql://duties_dashboard:${PG_PASSWORD}@localhost:${PG_PORT}/duties_dashboard"
+            printf 'PG_USER=%s\n'                  "duties_dashboard"
+            printf 'PG_PASSWORD=%s\n'              "$PG_PASSWORD"
+            printf 'PG_DATABASE=%s\n'              "duties_dashboard"
+            printf 'PG_PORT=%s\n'                  "${PG_PORT}"
+            printf 'MSSQL_HOST=%s\n'               "$MSSQL_HOST"
+            printf 'MSSQL_PORT=%s\n'               "${MSSQL_PORT:-1433}"
+            printf 'MSSQL_DATABASE=%s\n'           "$MSSQL_DATABASE"
+            printf 'MSSQL_USER=%s\n'               "$MSSQL_USER"
+            printf 'MSSQL_PASSWORD=%s\n'           "$MSSQL_PASSWORD"
+            printf 'MSSQL_TRUST_SERVER_CERT=%s\n'  "${MSSQL_TRUST_SERVER_CERT:-true}"
+            printf 'MSSQL_ENCRYPT=%s\n'            "${MSSQL_ENCRYPT:-false}"
+          } > backend.env
+
+      - name: Sync backend to app directory
+        run: |
+          mkdir -p "${APP_DIR}/backend"
+          rsync -a --delete --filter='P node_modules/' \
+            backend/dist backend/prisma backend/package.json backend/package-lock.json \
+            backend/docker-compose.yml backend/ecosystem.config.cjs \
+            "${APP_DIR}/backend/"
+          cp backend.env "${APP_DIR}/backend/.env"
+
+      - name: Sync frontend to web directory
+        run: |
+          mkdir -p "${WEB_DIR}"
+          rsync -a --delete dist/ "${WEB_DIR}/"
+
+      - name: Install prod deps, migrate, and reload
+        working-directory: ${{ env.APP_DIR }}/backend
+        run: |
+          set -euo pipefail
+          docker compose up -d
+          npm ci --omit=dev
+          npx prisma generate
+          npx prisma migrate deploy
+          pm2 startOrReload ecosystem.config.cjs --update-env
+          pm2 save
+
+      - name: Smoke-test /health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 10); do
+            if curl -sf "http://127.0.0.1:${BACKEND_PORT}/health" > /dev/null; then
+              echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not become healthy in time." >&2
+          pm2 logs duties-backend --lines 50 --nostream || true
+          exit 1

@@ -1,0 +1,20 @@
+# Explicit project name — Compose otherwise defaults to the containing
+# directory's basename ("backend"), which collides with any other app on a
+# shared server whose backend also happens to live in a dir named "backend".
+name: duties-dashboard
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-duties_dashboard}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD must be set in your .env}
+      POSTGRES_DB: ${PG_DATABASE:-duties_dashboard}
+    ports:
+      - '127.0.0.1:${PG_PORT:-5433}:5432'
+    volumes:
+      - duties_dashboard_pgdata:/var/lib/postgresql/data
+
+volumes:
+  duties_dashboard_pgdata:

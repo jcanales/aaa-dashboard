@@ -11,7 +11,10 @@ function authHeaders(): HeadersInit {
 }
 
 async function get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
-  const url = new URL(`${BASE_URL}${path}`)
+  // Base arg lets BASE_URL be either relative ('/api', for same-origin nginx
+  // proxying in production) or absolute (local dev) — a bare relative string
+  // passed to `new URL()` with no base throws "Invalid URL".
+  const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v))

@@ -45,7 +45,10 @@ export async function getMssqlPool(): Promise<sql.ConnectionPool> {
   const pool = new sql.ConnectionPool(poolConfig);
   pool.on('error', (err) => {
     logger.error('MSSQL pool error', { message: err.message });
-    _pool = null;
+    // Only retire this pool if it's still the current one — a delayed error
+    // from a pool already superseded by a newer, healthy one must not wipe
+    // out that newer pool out from under in-flight callers.
+    if (_pool === pool) _pool = null;
   });
 
   _connecting = pool

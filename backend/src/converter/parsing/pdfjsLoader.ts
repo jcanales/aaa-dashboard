@@ -35,6 +35,16 @@ if (typeof PromiseCtor.withResolvers !== 'function') {
 let cached: Promise<PdfjsLegacyModule> | null = null;
 
 export function loadPdfjs(): Promise<PdfjsLegacyModule> {
-  cached ??= dynamicImport('pdfjs-dist/legacy/build/pdf.mjs');
+  // Only cache a *successful* import. A rejected promise cached here would be
+  // permanent — callers swallow the load failure and silently fall back to
+  // the AI extraction path, so a single transient failure (e.g. an EMFILE
+  // blip during a rolling deploy) would otherwise disable the fast
+  // deterministic path for the rest of the process's life.
+  if (!cached) {
+    cached = dynamicImport('pdfjs-dist/legacy/build/pdf.mjs').catch((err) => {
+      cached = null;
+      throw err;
+    });
+  }
   return cached;
 }

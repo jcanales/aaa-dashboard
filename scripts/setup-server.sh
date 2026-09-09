@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # One-time dependency install for duties-dashboard on an internal office
-# Ubuntu/Debian server. Run as root (or via sudo): sudo bash scripts/setup-server.sh
+# Ubuntu/Debian server. Run as root (or via sudo):
+#   sudo -E DOMAIN=usbroker.jdgroup.net BACKEND_PORT=3001 WEB_DIR=/var/www/duties-dashboard SITE_NAME=duties-dashboard bash scripts/setup-server.sh
 #
-# This server is on the office LAN only — no inbound internet access — so this
-# script never assumes a public domain and never talks to a Let's Encrypt/ACME
-# server. nginx serves plain HTTP. Add TLS later (internal CA or DNS-01) if you
-# ever need it; it's a separate, optional step, not a dependency of the app.
+# This server sits on the office LAN/VPN — its hostnames (e.g.
+# usbroker.jdgroup.net) resolve only to its private IP, never routable from
+# the raw public internet, even though they look like normal public domains.
+# TLS is a pre-issued wildcard cert for *.jdgroup.net already placed at
+# /etc/nginx/ssl/wildcard.jdgroup.net.{crt,key} (not certbot/Let's Encrypt —
+# an ACME server could never reach this box to issue one). Passing DOMAIN
+# generates an HTTPS vhost using that wildcard cert; every *.jdgroup.net
+# subdomain (prod, dev, whatever's next) can reuse the same cert files.
+# Leaving DOMAIN unset falls back to the original plain-HTTP-by-IP config.
 #
 # This script ONLY installs infrastructure — packages, a dedicated deploy user,
-# directories, Docker (for the app's own Postgres), Node/pm2, and a plain nginx
+# directories, Docker (for the app's own Postgres), Node/pm2, and the nginx
 # reverse proxy. It never writes secrets (JWT_SECRET, DB passwords, etc.) —
 # those go in backend/.env, created separately. Safe to re-run.
 #
@@ -22,13 +28,14 @@
 
 set -uo pipefail   # -e intentionally omitted: failures are caught per-task
 
-# ── Config — edit if your setup differs ──────────────────────────────────────
-APP_DIR="/opt/duties-dashboard"
-WEB_DIR="/var/www/duties-dashboard"
-DEPLOY_USER="deploy"
-BACKEND_PORT=3001
-SITE_NAME="duties-dashboard"
-LOG_FILE="/tmp/duties-dashboard-setup.log"
+# ── Config — override via env vars (e.g. for a second, dev environment on the
+# same box), or edit these defaults directly ─────────────────────────────────
+APP_DIR="${APP_DIR:-/opt/duties-dashboard}"
+WEB_DIR="${WEB_DIR:-/var/www/duties-dashboard}"
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
+BACKEND_PORT="${BACKEND_PORT:-3001}"
+SITE_NAME="${SITE_NAME:-duties-dashboard}"
+LOG_FILE="${LOG_FILE:-/tmp/duties-dashboard-setup.log}"
 TOTAL_STEPS=7
 
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -173,11 +180,60 @@ begin_step "Node.js 20 + pm2"
   task "pm2 startup for ${DEPLOY_USER}"    bash -c "env PATH=\$PATH:/usr/bin pm2 startup systemd -u ${DEPLOY_USER} --hp /home/${DEPLOY_USER} | tail -1 | bash"
 step_ok "$(node -v 2>/dev/null)"
 
-# ── Step 5 — nginx (plain HTTP — internal network only, no TLS) ─────────────
-begin_step "nginx (plain HTTP)"
-  task "Install nginx"                     bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y nginx"
-  task "Enable nginx"                      systemctl enable nginx
-  task "Write nginx site config"           bash -c "cat > /etc/nginx/sites-available/${SITE_NAME} << 'NGINXEOF'
+# ── Step 5 — nginx ────────────────────────────────────────────────────────────
+# In production this box actually terminates TLS with a pre-issued wildcard
+# cert for *.jdgroup.net (not certbot/Let's Encrypt — DOMAIN's public-looking
+# hostname still only resolves to this box's private IP, reachable over the
+# office network/VPN). Pass DOMAIN (and optionally WILDCARD_CERT/WILDCARD_KEY,
+# if they ever live somewhere other than the defaults below) to get that same
+# HTTPS vhost; leave DOMAIN unset for the original plain-HTTP-by-IP fallback.
+DOMAIN="${DOMAIN:-}"
+WILDCARD_CERT="${WILDCARD_CERT:-/etc/nginx/ssl/wildcard.jdgroup.net.crt}"
+WILDCARD_KEY="${WILDCARD_KEY:-/etc/nginx/ssl/wildcard.jdgroup.net.key}"
+
+if [ -n "$DOMAIN" ] && [ -f "$WILDCARD_CERT" ] && [ -f "$WILDCARD_KEY" ]; then
+  NGINX_CONF=$(cat <<NGINXEOF
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate     ${WILDCARD_CERT};
+    ssl_certificate_key ${WILDCARD_KEY};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header X-Frame-Options           "DENY" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+
+    location /api/ {
+        proxy_pass         http://127.0.0.1:${BACKEND_PORT}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_buffering    off;
+        proxy_read_timeout 300s;
+    }
+
+    root ${WEB_DIR};
+    index index.html;
+    location / { try_files \$uri \$uri/ /index.html; }
+}
+NGINXEOF
+)
+  NGINX_STEP_LABEL="https://${DOMAIN}/"
+else
+  NGINX_CONF=$(cat <<NGINXEOF
 server {
     listen 80;
     server_name _;
@@ -199,9 +255,18 @@ server {
     # React Router SPA fallback
     location / { try_files \$uri \$uri/ /index.html; }
 }
-NGINXEOF"
+NGINXEOF
+)
+  NGINX_STEP_LABEL="http://${SERVER_IP:-<server-ip>}/"
+fi
+export NGINX_CONF
+
+begin_step "nginx"
+  task "Install nginx"                     bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y nginx"
+  task "Enable nginx"                      systemctl enable nginx
+  task "Write nginx site config"           bash -c 'printf "%s\n" "$NGINX_CONF" > "/etc/nginx/sites-available/'"${SITE_NAME}"'"'
   task "Activate site config"              bash -c "ln -sf /etc/nginx/sites-available/${SITE_NAME} /etc/nginx/sites-enabled/${SITE_NAME} && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
-step_ok "http://${SERVER_IP:-<server-ip>}/"
+step_ok "${NGINX_STEP_LABEL}"
 
 # ── Step 6 — App + web directories ───────────────────────────────────────────
 begin_step "App + web directories"

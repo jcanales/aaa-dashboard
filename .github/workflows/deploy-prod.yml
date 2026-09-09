@@ -1,11 +1,18 @@
-# Deploys duties-dashboard (frontend + backend) directly on the office server.
+# Deploys duties-dashboard PRODUCTION (frontend + backend) directly on the
+# office server, at https://usbroker.jdgroup.net — reachable only from the
+# office network/VPN (it resolves to a private IP; the wildcard *.jdgroup.net
+# cert is what makes it look like a normal HTTPS domain).
 #
-# This server has no inbound internet access, so a GitHub-hosted runner could
-# never reach it over SSH. Instead this workflow runs ON a self-hosted runner
-# installed on that same server (see scripts/install-github-runner.sh) — the
-# runner polls GitHub over an outbound connection, so no inbound port is ever
-# needed. Because the runner already IS the deploy target, this workflow just
+# This server has no inbound SSH exposed (only 80/443 and a non-standard SSH
+# port used for admin access), so a GitHub-hosted runner could never reach it
+# to deploy. Instead this workflow runs ON a self-hosted runner installed on
+# that same server (see scripts/install-github-runner.sh) — the runner polls
+# GitHub over an outbound connection, so no inbound port is ever needed for
+# CI. Because the runner already IS the deploy target, this workflow just
 # builds and copies files locally — no SSH/rsync-over-network required.
+#
+# See deploy-dev.yml for the sibling dev-usbroker.jdgroup.net environment —
+# same server, different ports/paths/pm2 process, sharing this one runner.
 #
 # Prerequisites (run once, in order):
 #   1. scripts/setup-server.sh          — Node, Docker, nginx, pm2, deploy user
@@ -21,7 +28,7 @@
 # Nothing else needs configuring — no DEPLOY_HOST/PORT/SSH key, since the
 # runner already runs on the target box.
 
-name: Deploy to office server
+name: Deploy to office server (production)
 
 on:
   push:
@@ -37,6 +44,8 @@ env:
   WEB_DIR: /var/www/duties-dashboard
   BACKEND_PORT: 3001
   PG_PORT: 5433
+  COMPOSE_PROJECT_NAME: duties-dashboard
+  PM2_APP_NAME: duties-backend
 
 jobs:
   deploy:
@@ -132,5 +141,5 @@ jobs:
             sleep 2
           done
           echo "Backend did not become healthy in time." >&2
-          pm2 logs duties-backend --lines 50 --nostream || true
+          pm2 logs "${PM2_APP_NAME}" --lines 50 --nostream || true
           exit 1

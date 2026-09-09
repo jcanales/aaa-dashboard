@@ -1,7 +1,9 @@
 # Explicit project name — Compose otherwise defaults to the containing
 # directory's basename ("backend"), which collides with any other app on a
 # shared server whose backend also happens to live in a dir named "backend".
-name: duties-dashboard
+# Overridable so dev and prod, sharing one server, can use the same file —
+# dev's .env sets COMPOSE_PROJECT_NAME=duties-dashboard-dev.
+name: ${COMPOSE_PROJECT_NAME:-duties-dashboard}
 
 services:
   postgres:

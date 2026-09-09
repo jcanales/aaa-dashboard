@@ -24,7 +24,10 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/jcanales/aaa-dashboard}"
 RUNNER_USER="deploy"
-RUNNER_DIR="/home/${RUNNER_USER}/actions-runner"
+# /opt (not /home/deploy) — alongside this box's other shared-infra dirs
+# (/opt/config-files, /opt/logs). One runner serves both deploy-prod.yml and
+# deploy-dev.yml.
+RUNNER_DIR="/opt/actions-runner"
 RUNNER_LABELS="duties-dashboard"
 RUNNER_NAME="${RUNNER_NAME:-duties-dashboard-$(hostname -s)}"
 
@@ -77,7 +80,11 @@ if [ -f "${RUNNER_DIR}/.runner" ]; then
 fi
 
 echo -e "${CYAN}${BOLD}Downloading runner package…${NC}"
-sudo -u "${RUNNER_USER}" mkdir -p "${RUNNER_DIR}"
+# RUNNER_DIR may pre-exist as a root-owned placeholder (e.g. created ahead of
+# time by whoever provisioned /opt on this box) — everything below runs as
+# RUNNER_USER, so it must own the directory first.
+mkdir -p "${RUNNER_DIR}"
+chown -R "${RUNNER_USER}:${RUNNER_USER}" "${RUNNER_DIR}"
 sudo -u "${RUNNER_USER}" bash -c "
   cd '${RUNNER_DIR}' &&
   curl -fsSL -o runner.tar.gz '${DOWNLOAD_URL}' &&

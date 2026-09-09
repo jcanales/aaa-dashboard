@@ -138,24 +138,31 @@ async function runExtraction<T>(
   schema: z.ZodType<T>
 ): Promise<RunResult<T>> {
   try {
-    const message = await client.messages.create({
-      model,
-      // Measured on a real 7-line invoice: 2,151 of 3,972 output tokens were thinking
-      // tokens on this model. At ~260 tokens/line that left room for only ~23-25 line
-      // items before stop_reason:'max_tokens' truncation; real invoices routinely
-      // exceed that.
-      max_tokens: 32000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
-            { type: 'text', text: 'Extrae los datos de esta factura según el esquema indicado.' },
-          ],
-        },
-      ],
-    });
+    // Streamed rather than a plain create() — at max_tokens:32000 the API
+    // requires streaming (a non-streamed request this large can be rejected
+    // with "Streaming is strongly recommended for operations that may take
+    // longer than 10 minutes"). .stream().finalMessage() still resolves to
+    // the same Message object once complete, just fed incrementally.
+    const message = await client.messages
+      .stream({
+        model,
+        // Measured on a real 7-line invoice: 2,151 of 3,972 output tokens were thinking
+        // tokens on this model. At ~260 tokens/line that left room for only ~23-25 line
+        // items before stop_reason:'max_tokens' truncation; real invoices routinely
+        // exceed that.
+        max_tokens: 32000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+              { type: 'text', text: 'Extrae los datos de esta factura según el esquema indicado.' },
+            ],
+          },
+        ],
+      })
+      .finalMessage();
 
     if (message.stop_reason === 'max_tokens') {
       return { ok: false, error: 'Claude response was truncated (max_tokens reached) before completing the extraction' };

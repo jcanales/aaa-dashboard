@@ -30,20 +30,36 @@ function buildPoolConfig(): sql.config {
 }
 
 let _pool: sql.ConnectionPool | null = null;
+// Several routes can call getMssqlPool() concurrently on a cold start (e.g.
+// the dashboard fires ~5 API requests on page load) — without this, each one
+// would race to open its own ConnectionPool.connect(), multiplying login
+// attempts against the SQL Server at once. Callers that arrive while a
+// connect is already in flight await that same attempt instead.
+let _connecting: Promise<sql.ConnectionPool> | null = null;
 
 export async function getMssqlPool(): Promise<sql.ConnectionPool> {
   if (_pool?.connected) return _pool;
+  if (_connecting) return _connecting;
 
   const poolConfig = buildPoolConfig();
-  _pool = new sql.ConnectionPool(poolConfig);
-  _pool.on('error', (err) => {
+  const pool = new sql.ConnectionPool(poolConfig);
+  pool.on('error', (err) => {
     logger.error('MSSQL pool error', { message: err.message });
     _pool = null;
   });
 
-  await _pool.connect();
-  logger.info('MSSQL pool connected', { server: poolConfig.server, db: poolConfig.database });
-  return _pool;
+  _connecting = pool
+    .connect()
+    .then(() => {
+      _pool = pool;
+      logger.info('MSSQL pool connected', { server: poolConfig.server, db: poolConfig.database });
+      return pool;
+    })
+    .finally(() => {
+      _connecting = null;
+    });
+
+  return _connecting;
 }
 
 export async function closeMssqlPool(): Promise<void> {

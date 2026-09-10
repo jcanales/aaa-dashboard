@@ -2,9 +2,9 @@ import sql from 'mssql';
 import { Response } from 'express';
 import { prisma } from '../db';
 
-/** null = unrestricted (admin/broker). Empty array = no access. */
+/** null = unrestricted (admin/broker/manager). Empty array = no access. */
 export async function getAllowedCoKeys(userId: string, role: string): Promise<string[] | null> {
-  if (role === 'admin' || role === 'broker') return null;
+  if (role === 'admin' || role === 'broker' || role === 'manager') return null;
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return [];
   return (user.clientCoKeys as string[]) ?? [];

@@ -215,6 +215,9 @@ server {
     add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
 
     location /api/ {
+        # Matches multer's fileUpload limit (converterConversions.ts) — nginx's
+        # own default (1m) would otherwise 413 any PDF upload over ~1MB.
+        client_max_body_size 15m;
         proxy_pass         http://127.0.0.1:${BACKEND_PORT}/api/;
         proxy_http_version 1.1;
         proxy_set_header   Host \$host;
@@ -239,6 +242,9 @@ server {
     server_name _;
 
     location /api/ {
+        # Matches multer's fileUpload limit (converterConversions.ts) — nginx's
+        # own default (1m) would otherwise 413 any PDF upload over ~1MB.
+        client_max_body_size 15m;
         proxy_pass         http://127.0.0.1:${BACKEND_PORT}/api/;
         proxy_http_version 1.1;
         proxy_set_header   Host \$host;

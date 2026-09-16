@@ -24,6 +24,9 @@
 #   MSSQL_HOST, MSSQL_PORT, MSSQL_USER, MSSQL_PASSWORD, MSSQL_DATABASE
 #                   — legacy RB Systems SQL Server connection
 #   MSSQL_TRUST_SERVER_CERT, MSSQL_ENCRYPT — optional, "true"/"false"
+#   ANTHROPIC_API_KEY — required for the FTZ Converter's invoice extraction
+#                   (extractionService.ts); shared with dev, since it's not a
+#                   trust boundary the way JWT_SECRET/PG_PASSWORD are
 #
 # Nothing else needs configuring — no DEPLOY_HOST/PORT/SSH key, since the
 # runner already runs on the target box.
@@ -87,6 +90,7 @@ jobs:
           MSSQL_PASSWORD: ${{ secrets.MSSQL_PASSWORD }}
           MSSQL_TRUST_SERVER_CERT: ${{ secrets.MSSQL_TRUST_SERVER_CERT }}
           MSSQL_ENCRYPT: ${{ secrets.MSSQL_ENCRYPT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           {
             printf 'PORT=%s\n'                    "${BACKEND_PORT}"
@@ -103,6 +107,7 @@ jobs:
             printf 'MSSQL_PASSWORD=%s\n'           "$MSSQL_PASSWORD"
             printf 'MSSQL_TRUST_SERVER_CERT=%s\n'  "${MSSQL_TRUST_SERVER_CERT:-true}"
             printf 'MSSQL_ENCRYPT=%s\n'            "${MSSQL_ENCRYPT:-false}"
+            printf 'ANTHROPIC_API_KEY=%s\n'        "$ANTHROPIC_API_KEY"
           } > backend.env
 
       - name: Sync backend to app directory

@@ -17,8 +17,10 @@
 #                     work against prod or vice versa
 #   PG_PASSWORD_DEV — separate from prod's PG_PASSWORD (dev has its own
 #                     Postgres container/volume, entirely isolated from prod's)
-# Reuses prod's MSSQL_* secrets — both point at the same legacy RB Systems
-# SQL Server, which this app only reads from.
+# Reuses prod's MSSQL_* and ANTHROPIC_API_KEY secrets — both point at the same
+# legacy RB Systems SQL Server (read-only) and the same Anthropic account, so
+# there's no isolation reason to split them per-environment the way JWT_SECRET
+# and PG_PASSWORD are.
 #
 # nginx vhost + DNS record for dev-usbroker.jdgroup.net are one-time manual
 # setup, not something this workflow provisions (same as prod's TLS/domain).
@@ -83,6 +85,7 @@ jobs:
           MSSQL_PASSWORD: ${{ secrets.MSSQL_PASSWORD }}
           MSSQL_TRUST_SERVER_CERT: ${{ secrets.MSSQL_TRUST_SERVER_CERT }}
           MSSQL_ENCRYPT: ${{ secrets.MSSQL_ENCRYPT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           {
             printf 'PORT=%s\n'                    "${BACKEND_PORT}"
@@ -99,6 +102,7 @@ jobs:
             printf 'MSSQL_PASSWORD=%s\n'           "$MSSQL_PASSWORD"
             printf 'MSSQL_TRUST_SERVER_CERT=%s\n'  "${MSSQL_TRUST_SERVER_CERT:-true}"
             printf 'MSSQL_ENCRYPT=%s\n'            "${MSSQL_ENCRYPT:-false}"
+            printf 'ANTHROPIC_API_KEY=%s\n'        "$ANTHROPIC_API_KEY"
           } > backend.env
 
       - name: Sync backend to app directory

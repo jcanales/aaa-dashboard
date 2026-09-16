@@ -176,6 +176,13 @@ model Conversion {
   // before this column existed. Not the same as updatedAt - createdAt, which
   // drifts on every later edit.
   extractionDurationMs Int?
+  // Anthropic model used for the AI extraction fallback ('claude-sonnet-5' /
+  // 'claude-opus-5'), or null when the deterministic template parser handled
+  // this document with no AI call at all. Together with tokensIn/tokensOut
+  // this drives the Configuration > Logs cost grid.
+  extractionModel String?
+  tokensIn        Int?
+  tokensOut       Int?
   applicationData Json
   headerData      Json
   detailData      Json

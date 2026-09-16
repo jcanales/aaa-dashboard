@@ -18,6 +18,33 @@ export interface DetectedLayout {
   conversionCount: number
 }
 
+export interface ConversionLog {
+  id: string
+  pdfFilename: string
+  status: string
+  extractionError: string | null
+  parseSource: string | null
+  extractionModel: string | null
+  extractionDurationMs: number | null
+  tokensIn: number | null
+  tokensOut: number | null
+  estimatedCostUsd: number | null
+  createdAt: string
+}
+
+export interface ConversionLogStats {
+  totalDocuments: number
+  totalTokensIn: number
+  totalTokensOut: number
+  totalEstimatedCostUsd: number
+}
+
+export interface ConversionLogsResult {
+  rows: ConversionLog[]
+  total: number
+  stats: ConversionLogStats
+}
+
 export interface FacilityDefaults {
   applicationInfo: Record<string, string | number | null>
   header: Record<string, string | number | null>

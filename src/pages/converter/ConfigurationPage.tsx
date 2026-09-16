@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
 import { FacilityTab } from '@/components/converter/config/FacilityTab'
 import { ClientsTab } from '@/components/converter/config/ClientsTab'
 import { TemplatesTab } from '@/components/converter/config/TemplatesTab'
 import { LayoutsTab } from '@/components/converter/config/LayoutsTab'
 import { UsersTab } from '@/components/converter/config/UsersTab'
+import { LogsTab } from '@/components/converter/config/LogsTab'
 
-type Tab = 'facility' | 'clients' | 'templates' | 'layouts' | 'users'
+type Tab = 'facility' | 'clients' | 'templates' | 'layouts' | 'users' | 'logs'
 
-const TABS: { id: Tab; label: string }[] = [
+const BASE_TABS: { id: Tab; label: string }[] = [
   { id: 'facility', label: 'FTZ Facility' },
   { id: 'clients', label: 'Clients' },
   { id: 'templates', label: 'Parser templates' },
@@ -16,7 +18,16 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'users', label: 'Users' },
 ]
 
+// Narrower than the other tabs (which are coordinator+manager+admin, matching
+// their backend requireRole gates) — Logs surfaces AI token cost, restricted
+// to manager/admin per explicit request. GET /api/converter/logs enforces the
+// same gate server-side; this only keeps the tab from appearing for a role
+// that would just get a 403 from it.
+const LOGS_TAB = { id: 'logs' as const, label: 'Logs' }
+
 export function ConfigurationPage() {
+  const role = useAuthStore((s) => s.user?.role)
+  const tabs = useMemo(() => (role === 'admin' || role === 'manager' ? [...BASE_TABS, LOGS_TAB] : BASE_TABS), [role])
   const [tab, setTab] = useState<Tab>('facility')
 
   return (
@@ -28,7 +39,7 @@ export function ConfigurationPage() {
 
       <div className="border-b border-slate-200">
         <div className="flex gap-4">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -50,6 +61,7 @@ export function ConfigurationPage() {
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'layouts' && <LayoutsTab />}
       {tab === 'users' && <UsersTab />}
+      {tab === 'logs' && (role === 'admin' || role === 'manager') && <LogsTab />}
     </div>
   )
 }

@@ -1,41 +1,10 @@
 import { Router, Request, Response } from 'express';
 import sql from 'mssql';
 import { getMssqlPool } from '../../db/mssql';
-import { prisma } from '../../db';
 import { logger } from '../../utils/logger';
+import { getAllowedCoKeys, assertCoKeyAllowed, parseDate, defaultRange } from '../entryScope';
 
 const router = Router();
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-async function getAllowedCoKeys(userId: string, role: string): Promise<string[] | null> {
-  if (role === 'admin' || role === 'broker') return null;
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return [];
-  return (user.clientCoKeys as string[]) ?? [];
-}
-
-function assertCoKeyAllowed(coKey: string, allowed: string[] | null, res: Response): boolean {
-  if (allowed === null) return true;
-  if (allowed.includes(coKey)) return true;
-  res.status(403).json({ error: 'Access denied for this client account' });
-  return false;
-}
-
-function parseDate(s: string | undefined, fallback: Date): Date {
-  if (!s) return fallback;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? fallback : d;
-}
-
-function defaultRange(): { from: Date; to: Date } {
-  const to   = new Date();
-  const from = new Date(to);
-  from.setMonth(from.getMonth() - 2);
-  from.setDate(1);
-  from.setHours(0, 0, 0, 0);
-  return { from, to };
-}
 
 // ── Status mappings ───────────────────────────────────────────────────────────
 

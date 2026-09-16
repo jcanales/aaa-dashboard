@@ -195,6 +195,10 @@ export async function runExtraction(conversionId: string, pdfBase64: string): Pr
         lineAnchors: toJson(deterministic.lineAnchors),
         layoutId: null,
         extractionDurationMs: Date.now() - startedAt,
+        // No AI call on this path — legitimate zero cost, not missing data.
+        extractionModel: null,
+        tokensIn: 0,
+        tokensOut: 0,
       };
       if (client.CustomerName || client.CompanyKey || client.Customer || nextFtz) {
         const row = await prisma.conversion.findUnique({
@@ -220,6 +224,9 @@ export async function runExtraction(conversionId: string, pdfBase64: string): Pr
 
     let extraction: ExtractionSuccess | ExtractionFailure;
     let layoutId: string | null = null;
+    // extractInvoiceData/analyzeNewLayout each pin a single hardcoded model — mirrored
+    // here since neither returns it, so the Logs grid knows which was billed.
+    const model = match ? 'claude-sonnet-5' : 'claude-opus-5';
 
     if (match) {
       extraction = await extractInvoiceData(pdfBase64, undefined, match.fieldMap);
@@ -227,7 +234,7 @@ export async function runExtraction(conversionId: string, pdfBase64: string): Pr
     } else {
       const analysis = await analyzeNewLayout(pdfBase64);
       if (analysis.ok) {
-        extraction = { ok: true, data: analysis.data };
+        extraction = { ok: true, data: analysis.data, usage: analysis.usage };
         if (fingerprint) layoutId = (await createLayout(fingerprint, analysis.fieldMap)).id;
       } else {
         extraction = analysis;
@@ -248,6 +255,9 @@ export async function runExtraction(conversionId: string, pdfBase64: string): Pr
         // AI path carries no non-blocking parse warnings — only the deterministic path does.
         parseSource: 'ai',
         extractionDurationMs: Date.now() - startedAt,
+        extractionModel: model,
+        tokensIn: extraction.usage?.tokensIn ?? null,
+        tokensOut: extraction.usage?.tokensOut ?? null,
       },
     });
   } catch (err) {

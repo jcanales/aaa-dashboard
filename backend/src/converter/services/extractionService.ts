@@ -117,16 +117,27 @@ export function withCleanedDescriptions(
   return { ...billOfLading, Line } as DetailExtractionResult['billOfLading'];
 }
 
+// Populated whenever the API actually returned a message — even a truncated
+// or schema-invalid one still consumed tokens and should show up on the
+// Configuration > Logs cost grid. Absent only when the request never
+// completed (network error, thrown before message.usage existed).
+export interface TokenUsage {
+  tokensIn: number;
+  tokensOut: number;
+}
+
 export interface ExtractionSuccess {
   ok: true;
   data: DetailExtractionResult;
+  usage: TokenUsage;
 }
 export interface ExtractionFailure {
   ok: false;
   error: string;
+  usage?: TokenUsage;
 }
 
-type RunResult<T> = { ok: true; data: T } | ExtractionFailure;
+type RunResult<T> = { ok: true; data: T; usage: TokenUsage } | ExtractionFailure;
 
 // Shared by extractInvoiceData (known-layout / no-layout path, regular model) and
 // analyzeNewLayout (new-layout path, more capable model + a richer response schema) —
@@ -166,23 +177,25 @@ async function runExtraction<T>(
       })
       .finalMessage();
 
+    const usage: TokenUsage = { tokensIn: message.usage.input_tokens, tokensOut: message.usage.output_tokens };
+
     if (message.stop_reason === 'max_tokens') {
-      return { ok: false, error: 'Claude response was truncated (max_tokens reached) before completing the extraction' };
+      return { ok: false, error: 'Claude response was truncated (max_tokens reached) before completing the extraction', usage };
     }
 
     const block = message.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
-    if (!block?.text) return { ok: false, error: 'Claude response contained no text block' };
+    if (!block?.text) return { ok: false, error: 'Claude response contained no text block', usage };
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(stripJsonFence(block.text));
     } catch {
-      return { ok: false, error: 'Claude response was not valid JSON' };
+      return { ok: false, error: 'Claude response was not valid JSON', usage };
     }
 
     const result = schema.safeParse(parsed);
-    if (!result.success) return { ok: false, error: result.error.message };
-    return { ok: true, data: result.data };
+    if (!result.success) return { ok: false, error: result.error.message, usage };
+    return { ok: true, data: result.data, usage };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Unknown extraction error' };
   }
@@ -198,13 +211,14 @@ export async function extractInvoiceData(
   // DetailExtractionResult is hand-declared, not z.infer'd (see schemaBuilder.ts) — the
   // runtime shape matches (zod already validated it), so this cast is sound.
   const data = result.data as DetailExtractionResult;
-  return { ok: true, data: { billOfLading: withCleanedDescriptions(data.billOfLading) } };
+  return { ok: true, data: { billOfLading: withCleanedDescriptions(data.billOfLading) }, usage: result.usage };
 }
 
 export interface LayoutAnalysisSuccess {
   ok: true;
   data: DetailExtractionResult;
   fieldMap: Record<string, string | null>;
+  usage: TokenUsage;
 }
 export type LayoutAnalysisResult = LayoutAnalysisSuccess | ExtractionFailure;
 
@@ -221,5 +235,6 @@ export async function analyzeNewLayout(
     ok: true,
     data: { billOfLading: withCleanedDescriptions(result.data.billOfLading as DetailExtractionResult['billOfLading']) },
     fieldMap: result.data.fieldMap,
+    usage: result.usage,
   };
 }

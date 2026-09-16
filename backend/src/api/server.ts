@@ -19,6 +19,7 @@ import converterFacilityRouter from './routes/converterFacility';
 import converterFtzClientsRouter from './routes/converterFtzClients';
 import converterFtz214FieldsRouter from './routes/converterFtz214Fields';
 import converterUsersRouter from './routes/converterUsers';
+import converterLogsRouter from './routes/converterLogs';
 import { accessLog as converterAccessLog } from '../converter/middleware/accessLog';
 import { startPollers } from '../pollers/pollerManager';
 import { sweepStaleProcessingConversions } from '../converter/services/staleConversions';
@@ -102,6 +103,7 @@ app.use('/api/converter/facility', converterFacilityRouter);
 app.use('/api/converter/ftz-clients', converterFtzClientsRouter);
 app.use('/api/converter/ftz214/fields', converterFtz214FieldsRouter);
 app.use('/api/converter/users', converterUsersRouter);
+app.use('/api/converter/logs', converterLogsRouter);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((_req, res) => {

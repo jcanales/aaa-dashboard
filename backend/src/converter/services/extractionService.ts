@@ -47,6 +47,7 @@ ${LINE_FIELDS.map(describeField).join('\n')}
 Reglas estrictas:
 - Si un dato no aparece en la factura o no puedes leerlo con certeza, devuelve null — NUNCA inventes un valor.
 - Excepción a la regla anterior: Packages es un campo obligatorio (Mandatory) — si la factura no incluye un conteo de bultos/paquetes para un renglón, devuelve { "value": 0, "units": null } en lugar de null.
+- Excepción a la regla anterior: Charges (Freight Charges) es un campo obligatorio (Mandatory) — si la factura no muestra un cargo de flete para un renglón, devuelve 0 en lugar de null.
 - "Line" debe tener un elemento por cada producto listado en la factura.
 - No hagas cálculos ni conversiones de unidades; transcribe los valores tal como aparecen.
 - MID (Manufacturer ID) debe identificar al fabricante del país de origen (OriginCountry) de ESE renglón específico. Si la factura solo imprime un MID mexicano (p. ej. del exportador/consolidador) y el OriginCountry del renglón es un país distinto de México, devuelve null en MID para ese renglón en lugar de copiar el MID mexicano.

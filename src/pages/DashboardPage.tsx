@@ -149,6 +149,10 @@ export function DashboardPage() {
     IEEPA: m.ieepaDuty,
     'Ch-99': m.other99Duty,
   }))
+  // Past 6 periods, 5 bars each get too narrow for the value label to fit
+  // without overlapping its neighbors — drop the on-bar labels and let the
+  // tooltip carry exact values instead.
+  const showBarLabels = chartData.length <= 6
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -235,19 +239,19 @@ export function DashboardPage() {
               />
               <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="Regular" fill={DUTY_COLORS.regular} radius={[2, 2, 0, 0]}>
-                <LabelList dataKey="Regular" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                {showBarLabels && <LabelList dataKey="Regular" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />}
               </Bar>
               <Bar dataKey="Sec 301" fill={DUTY_COLORS.sec301} radius={[2, 2, 0, 0]}>
-                <LabelList dataKey="Sec 301" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                {showBarLabels && <LabelList dataKey="Sec 301" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />}
               </Bar>
               <Bar dataKey="Sec 232" fill={DUTY_COLORS.sec232} radius={[2, 2, 0, 0]}>
-                <LabelList dataKey="Sec 232" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                {showBarLabels && <LabelList dataKey="Sec 232" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />}
               </Bar>
               <Bar dataKey="IEEPA"   fill={DUTY_COLORS.ieepa} radius={[2, 2, 0, 0]}>
-                <LabelList dataKey="IEEPA" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                {showBarLabels && <LabelList dataKey="IEEPA" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />}
               </Bar>
               <Bar dataKey="Ch-99"   fill={DUTY_COLORS.ch99} radius={[2, 2, 0, 0]}>
-                <LabelList dataKey="Ch-99" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                {showBarLabels && <LabelList dataKey="Ch-99" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />}
               </Bar>
             </BarChart>
           </ResponsiveContainer>

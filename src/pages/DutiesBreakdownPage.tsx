@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
   ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers, Boxes, Download, ExternalLink,
+  TrendingUp, TrendingDown,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -39,8 +40,26 @@ function rowsByDuty(rows: HtsBreakdownRow[]): HtsBreakdownRow[] {
   return [...rows].sort((a, b) => b.totalDuty - a.totalDuty)
 }
 
-function KpiCard({ title, value, sub, icon, to }: {
-  title: string; value: string; sub?: string; icon: React.ReactNode; to?: string
+function pct(a: number, b: number) {
+  if (b === 0) return null
+  return ((a - b) / b) * 100
+}
+
+function Trend({ current, prior }: { current: number; prior: number }) {
+  const p = pct(current, prior)
+  if (p === null) return null
+  const up = p >= 0
+  return (
+    <span className={`flex items-center gap-0.5 text-[10px] font-medium ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+      {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+      {Math.abs(p).toFixed(1)}%
+    </span>
+  )
+}
+
+function KpiCard({ title, value, sub, icon, to, trend, priorValue }: {
+  title: string; value: string; sub?: string; icon: React.ReactNode; to?: string; trend?: React.ReactNode
+  priorValue?: string
 }) {
   const inner = (
     <>
@@ -52,7 +71,20 @@ function KpiCard({ title, value, sub, icon, to }: {
         <span className="text-teal-600">{icon}</span>
       </div>
       <p className="text-2xl font-bold text-slate-800 leading-tight">{value}</p>
-      {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
+      {priorValue ? (
+        <div className="mt-1">
+          {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">{priorValue}</span>
+            {trend}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 mt-1">
+          {trend}
+          {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
+        </div>
+      )}
     </>
   )
   if (to) {
@@ -104,13 +136,12 @@ function DutiesBreakdownPageSkeleton() {
 
 type SortKey = 'hts' | 'enteredValue' | 'regularDuty' | 'sec301' | 'sec232' | 'ieepa' | 'totalDuty'
 
-const PAGE_SIZE = 100
-
 export function DutiesBreakdownPage() {
   useClients()
   const { selectedClient } = useClientStore()
   const { dateFrom, dateTo, searchTrigger } = useDateStore()
 
+  const [pageSize, setPageSize] = useState(25)
   const [data, setData] = useState<HtsBreakdownResponse | null>(null)
   // Page-1 rows, frozen across grid pagination — the Top-10 chart, current-vs-prior
   // comparison, and effective-rate chart must always reflect the true global top 10
@@ -136,7 +167,7 @@ export function DutiesBreakdownPage() {
     setLoading(true)
     setExpanded({})
     Promise.all([
-      fetchHtsBreakdown({ ...params, page: 1, limit: PAGE_SIZE }),
+      fetchHtsBreakdown({ ...params, page: 1, limit: pageSize }),
       fetchIeepaMonthly(params),
     ])
       .then(([b, m]) => { setData(b); setChartRows(b.current); setMonthly(m) })
@@ -144,7 +175,7 @@ export function DutiesBreakdownPage() {
       .finally(() => setLoading(false))
   }, [searchTrigger, selectedClient?.coKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function loadPage(p: number) {
+  function loadPage(p: number, size: number = pageSize) {
     // Guard against out-of-order responses: a quick double-click on Next can
     // fire two overlapping requests, and without this check the older page's
     // response could resolve last and clobber the newer one.
@@ -152,10 +183,15 @@ export function DutiesBreakdownPage() {
     activeHts.current = null
     setExpanded({})
     setLoading(true)
-    fetchHtsBreakdown({ ...params, page: p, limit: PAGE_SIZE })
+    fetchHtsBreakdown({ ...params, page: p, limit: size })
       .then((b) => { if (genRef.current === gen) setData(b) })
       .catch(console.error)
       .finally(() => { if (genRef.current === gen) setLoading(false) })
+  }
+
+  function changePageSize(size: number) {
+    setPageSize(size)
+    loadPage(1, size)
   }
 
   function toggleSort(key: SortKey) {
@@ -204,7 +240,7 @@ export function DutiesBreakdownPage() {
     // no subtraction is needed to isolate the regular-duty segment.
     period: m.period, Regular: m.regularDuty,
     'Sec 301': m.sec301, 'Sec 232': m.sec232,
-    IEEPA: m.ieepaDuty + m.other99Duty,
+    IEEPA: m.ieepaDuty, 'Ch-99': m.other99Duty,
   }))
 
   const donutData = t ? [
@@ -293,13 +329,35 @@ export function DutiesBreakdownPage() {
       {/* KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <KpiCard title="Total Duties"   value={formatUSD(t?.totalDuty ?? 0)}
-                 sub={data ? `vs ${formatUSD(data.totals.prior.totalDuty)} prior period` : undefined}
+                 trend={t && data && <Trend current={t.totalDuty} prior={data.totals.prior.totalDuty} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.totalDuty) : undefined}
                  icon={<DollarSign className="h-4 w-4" />} to="/duties/hts/total" />
-        <KpiCard title="Regular Duty"   value={formatUSD(t?.regularDuty ?? 0)} icon={<Landmark className="h-4 w-4" />} to="/duties/hts/regular" />
-        <KpiCard title="Section 301"    value={formatUSD(t?.sec301 ?? 0)}      icon={<Percent className="h-4 w-4" />} to="/duties/hts/sec301" />
-        <KpiCard title="Section 232"    value={formatUSD(t?.sec232 ?? 0)}      icon={<Layers className="h-4 w-4" />} to="/duties/hts/sec232" />
-        <KpiCard title="IEEPA"          value={formatUSD(t?.ieepa ?? 0)}       icon={<ShieldAlert className="h-4 w-4" />} to="/duties/hts/ieepa" />
-        <KpiCard title="Ch-99"          value={formatUSD(t?.other ?? 0)}       icon={<Boxes className="h-4 w-4" />} to="/duties/hts/ch99" />
+        <KpiCard title="Regular Duty"   value={formatUSD(t?.regularDuty ?? 0)}
+                 trend={t && data && <Trend current={t.regularDuty} prior={data.totals.prior.regularDuty} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.regularDuty) : undefined}
+                 icon={<Landmark className="h-4 w-4" />} to="/duties/hts/regular" />
+        <KpiCard title="Section 301"    value={formatUSD(t?.sec301 ?? 0)}
+                 trend={t && data && <Trend current={t.sec301} prior={data.totals.prior.sec301} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.sec301) : undefined}
+                 icon={<Percent className="h-4 w-4" />} to="/duties/hts/sec301" />
+        <KpiCard title="Section 232"    value={formatUSD(t?.sec232 ?? 0)}
+                 trend={t && data && <Trend current={t.sec232} prior={data.totals.prior.sec232} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.sec232) : undefined}
+                 icon={<Layers className="h-4 w-4" />} to="/duties/hts/sec232" />
+        <KpiCard title="IEEPA"          value={formatUSD(t?.ieepa ?? 0)}
+                 trend={t && data && <Trend current={t.ieepa} prior={data.totals.prior.ieepa} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.ieepa) : undefined}
+                 icon={<ShieldAlert className="h-4 w-4" />} to="/duties/hts/ieepa" />
+        <KpiCard title="Ch-99"          value={formatUSD(t?.other ?? 0)}
+                 trend={t && data && <Trend current={t.other} prior={data.totals.prior.other} />}
+                 sub="vs prior period"
+                 priorValue={data ? formatUSD(data.totals.prior.other) : undefined}
+                 icon={<Boxes className="h-4 w-4" />} to="/duties/hts/ch99" />
       </div>
 
       {/* Chart row 1 */}
@@ -331,7 +389,8 @@ export function DutiesBreakdownPage() {
                 <Bar dataKey="Regular" stackId="d" fill={BUCKET_COLORS.regular} />
                 <Bar dataKey="Sec 301" stackId="d" fill={BUCKET_COLORS.sec301} />
                 <Bar dataKey="Sec 232" stackId="d" fill={BUCKET_COLORS.sec232} />
-                <Bar dataKey="IEEPA"   stackId="d" fill={BUCKET_COLORS.ieepa} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="IEEPA"   stackId="d" fill={BUCKET_COLORS.ieepa} />
+                <Bar dataKey="Ch-99"   stackId="d" fill={BUCKET_COLORS.other} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -385,8 +444,8 @@ export function DutiesBreakdownPage() {
             </span>
           )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="overflow-auto max-h-[640px]">
+          <table className="w-full text-xs sticky-table">
             <thead className="bg-slate-50">
               <tr>
                 <th className="w-8" />
@@ -488,26 +547,38 @@ export function DutiesBreakdownPage() {
             )}
           </table>
         </div>
-        {data && data.total > data.limit && (
+        {data && (
           <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              Page {data.page} of {Math.ceil(data.total / data.limit)}
-            </span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => loadPage(data.page - 1)}
-                disabled={data.page === 1 || loading}
-                className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Rows per page</span>
+              <select
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                className="text-xs border border-slate-200 rounded px-2 py-1 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-200"
               >
-                Prev
-              </button>
-              <button
-                onClick={() => loadPage(data.page + 1)}
-                disabled={data.page >= Math.ceil(data.total / data.limit) || loading}
-                className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
-              >
-                Next
-              </button>
+                {[25, 50, 75, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400">
+                Page {data.page} of {Math.ceil(data.total / data.limit) || 1}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => loadPage(data.page - 1)}
+                  disabled={data.page === 1 || loading}
+                  className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() => loadPage(data.page + 1)}
+                  disabled={data.page >= Math.ceil(data.total / data.limit) || loading}
+                  className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -12,7 +12,7 @@ import {
 } from 'recharts'
 import {
   ArrowLeft, DollarSign, Hash, Landmark, ChevronDown, ChevronRight,
-  Search, X, Building2,
+  Search, X, Building2, TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
@@ -45,6 +45,23 @@ function fmtM(n: number) {
 // structurally compatible, so one helper serves the per-row and the
 // grand-total case.
 type DutyFields = { regularDuty: number; sec301: number; sec232: number; ieepa: number; other: number; totalDuty: number }
+
+function pct(a: number, b: number) {
+  if (b === 0) return null
+  return ((a - b) / b) * 100
+}
+
+function Trend({ current, prior }: { current: number; prior: number }) {
+  const p = pct(current, prior)
+  if (p === null) return null
+  const up = p >= 0
+  return (
+    <span className={`flex items-center gap-0.5 text-comparison-delta font-medium ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+      {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+      {Math.abs(p).toFixed(1)}%
+    </span>
+  )
+}
 
 function bucketValue(x: DutyFields, bucket: DutyBucket): number {
   switch (bucket) {
@@ -148,6 +165,8 @@ export function DutyBucketDetailPage() {
   const [data, setData] = useState<HtsBreakdownResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   // At most one row expanded at a time — accordion behavior. `expanded`
   // therefore only ever holds zero or one key; activeHts guards against a
   // stale fetch (for a row the user has since collapsed or switched away
@@ -164,6 +183,7 @@ export function DutyBucketDetailPage() {
     setLoading(true)
     setExpanded({})
     setSearch('')
+    setPage(1)
     fetchHtsBreakdown({ ...params, page: 1, limit: PAGE_SIZE })
       .then(setData)
       .catch(console.error)
@@ -193,15 +213,26 @@ export function DutyBucketDetailPage() {
 
   const t = data?.totals.current
   const bucketTotal = t ? bucketValue(t, bucket) : 0
+  const priorT = data?.totals.prior
+  const bucketPriorTotal = priorT ? bucketValue(priorT, bucket) : 0
 
   const bucketRows = (data?.current ?? []).filter((r) => bucketValue(r, bucket) > 0)
+  const bucketPriorRows = (data?.prior ?? []).filter((r) => bucketValue(r, bucket) > 0)
   const q = search.trim().toLowerCase()
   const filtered = q
     ? bucketRows.filter((r) => r.hts.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q))
     : bucketRows
   const sortedRows = [...filtered].sort((a, b) => bucketValue(b, bucket) - bucketValue(a, bucket))
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
+  const pagedRows = sortedRows.slice((page - 1) * pageSize, page * pageSize)
+
+  function changePageSize(size: number) {
+    setPageSize(size)
+    setPage(1)
+  }
 
   const bucketEnteredValue = bucketRows.reduce((s, r) => s + r.enteredValue, 0)
+  const bucketPriorEnteredValue = bucketPriorRows.reduce((s, r) => s + r.enteredValue, 0)
 
   const top10 = sortedRows.slice(0, 10).map((r, i) => ({
     hts: formatHts(r.hts), value: bucketValue(r, bucket), fill: COLORS[i % COLORS.length],
@@ -280,6 +311,13 @@ export function DutyBucketDetailPage() {
               <div className="min-w-0">
                 <p className="text-kpi-label mb-1">{cfg.totalLabel}</p>
                 <p className="text-kpi-value text-slate-800">{formatUSD(bucketTotal)}</p>
+                <div className="mt-1">
+                  <p className="text-comparison-delta text-slate-400">vs prior period</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-comparison-delta text-slate-500">{formatUSD(bucketPriorTotal)}</span>
+                    <Trend current={bucketTotal} prior={bucketPriorTotal} />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -291,7 +329,13 @@ export function DutyBucketDetailPage() {
               <div className="min-w-0">
                 <p className="text-kpi-label mb-1">HTS Codes Involved</p>
                 <p className="text-kpi-value text-slate-800">{bucketRows.length.toLocaleString()}</p>
-                <p className="text-comparison-delta mt-1">carrying {cfg.tableTotal.toLowerCase()}</p>
+                <div className="mt-1">
+                  <p className="text-comparison-delta text-slate-400">vs prior period</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-comparison-delta text-slate-500">{bucketPriorRows.length.toLocaleString()}</span>
+                    <Trend current={bucketRows.length} prior={bucketPriorRows.length} />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -303,7 +347,13 @@ export function DutyBucketDetailPage() {
               <div className="min-w-0">
                 <p className="text-kpi-label mb-1">Entered Value Involved</p>
                 <p className="text-kpi-value text-slate-800">{formatUSD(bucketEnteredValue)}</p>
-                <p className="text-comparison-delta mt-1">across those HTS codes</p>
+                <div className="mt-1">
+                  <p className="text-comparison-delta text-slate-400">vs prior period</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-comparison-delta text-slate-500">{formatUSD(bucketPriorEnteredValue)}</span>
+                    <Trend current={bucketEnteredValue} prior={bucketPriorEnteredValue} />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -339,11 +389,11 @@ export function DutyBucketDetailPage() {
                     type="text"
                     placeholder="Search HTS or description…"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                     className="pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 w-56 placeholder:text-slate-400"
                   />
                   {search && (
-                    <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       <X className="h-3 w-3" />
                     </button>
                   )}
@@ -353,8 +403,8 @@ export function DutyBucketDetailPage() {
                 </span>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+            <div className="overflow-auto max-h-[640px]">
+              <table className="w-full text-left sticky-table">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
                     <th className="pl-4 pr-2 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider w-8">#</th>
@@ -366,8 +416,8 @@ export function DutyBucketDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {sortedRows.length > 0 ? (
-                    sortedRows.map((row, idx) => {
+                  {pagedRows.length > 0 ? (
+                    pagedRows.map((row, idx) => {
                       const value = bucketValue(row, bucket)
                       const pct = bucketTotal > 0 ? (value / bucketTotal) * 100 : 0
                       const isExpanded = !!expanded[row.hts]
@@ -377,7 +427,7 @@ export function DutyBucketDetailPage() {
                             className={`hover:bg-slate-50 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/40' : ''}`}
                             onClick={() => toggleExpand(row.hts)}
                           >
-                            <td className="pl-4 pr-2 py-2.5 text-xs text-slate-400 tabular-nums w-8 text-right">{idx + 1}</td>
+                            <td className="pl-4 pr-2 py-2.5 text-xs text-slate-400 tabular-nums w-8 text-right">{(page - 1) * pageSize + idx + 1}</td>
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-2">
                                 {isExpanded
@@ -426,6 +476,37 @@ export function DutyBucketDetailPage() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Rows per page</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                >
+                  {[25, 50, 75, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400">Page {page} of {totalPages}</span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setPage((p) => p - 1)}
+                    disabled={page === 1}
+                    className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={page >= totalPages}
+                    className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </>

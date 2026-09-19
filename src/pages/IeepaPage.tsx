@@ -62,15 +62,16 @@ function IeepaPageSkeleton() {
 }
 
 // ── Month range helper ───────────────────────────────────────────────────────
-// USENTRY.DUTY (surfaced here as regularDuty) is the header grand-total duty,
-// not the baseline-only segment — the sec301/232/ieepa/remediation buckets are
-// already included in it, so isolating "regular" duty means subtracting them
-// back out (same correction DutiesBreakdownPage applies to its trend chart).
+// regularDuty/sec301/sec232/ieepaDuty/other99Duty are computed backend-side
+// from actual line-level HTS/tariff codes (see htsBuckets.ts's
+// perEntryDutyCte, shared with the Duties-by-HTS page) — they're already
+// mutually exclusive buckets, unlike the legacy USENTRY header columns this
+// replaced, so no subtraction is needed here to isolate "regular" duty.
 interface FullMonth {
   key: string; label: string; yr: number; mo: number
   entries: number; ieepaEntries: number
   regularDuty: number; sec301: number; sec232: number
-  ieepaDuty: number; remediation: number; combined: number
+  ieepaDuty: number; other99: number; combined: number
 }
 
 function buildFullMonthRange(dateFrom: string, dateTo: string, monthly: IeepaMonthRow[]): FullMonth[] {
@@ -88,17 +89,16 @@ function buildFullMonthRange(dateFrom: string, dateTo: string, monthly: IeepaMon
     const mo = cursor.getMonth() + 1
     const key = `${yr}-${String(mo).padStart(2, '0')}`
     const row = byKey.get(key)
-    const sec301 = row?.sec301 ?? 0
-    const sec232 = row?.sec232 ?? 0
     const ieepaDuty = row?.ieepaDuty ?? 0
-    const remediation = row?.remediation ?? 0
+    const other99 = row?.other99Duty ?? 0
     months.push({
       key, label: format(cursor, 'MMM'), yr, mo,
       entries: row?.entries ?? 0,
       ieepaEntries: row?.ieepaEntries ?? 0,
-      regularDuty: Math.max(0, (row?.regularDuty ?? 0) - sec301 - sec232 - ieepaDuty - remediation),
-      sec301, sec232, ieepaDuty, remediation,
-      combined: ieepaDuty + remediation,
+      regularDuty: row?.regularDuty ?? 0,
+      sec301: row?.sec301 ?? 0, sec232: row?.sec232 ?? 0,
+      ieepaDuty, other99,
+      combined: ieepaDuty + other99,
     })
     cursor = addMonths(cursor, 1)
     guard++
@@ -109,13 +109,13 @@ function buildFullMonthRange(dateFrom: string, dateTo: string, monthly: IeepaMon
 interface Insight { icon: React.ReactNode; title: string; text: string }
 
 function buildInsights(months: FullMonth[], kpis: IeepaKpis): Insight[] {
-  const totalCombined = kpis.ieepaDuty + kpis.remediationDuty
+  const totalCombined = kpis.ieepaDuty + kpis.other99Duty
   const nonZero = months.filter((m) => m.combined > 0)
   if (nonZero.length === 0 || totalCombined === 0) {
     return [{
       icon: <Package className="h-[18px] w-[18px]" />,
       title: 'No IEEPA Impact',
-      text: 'No entries in this period carried IEEPA or Reciprocal duty.',
+      text: 'No entries in this period carried IEEPA/reciprocal (HTS 9903.01/9903.02) or other chapter-99 duty.',
     }]
   }
 
@@ -240,6 +240,12 @@ export function IeepaPage() {
   const [monthly, setMonthly] = useState<IeepaMonthRow[]>([])
   const [topEntries, setTopEntries] = useState<IeepaTopEntry[]>([])
   const [loading, setLoading] = useState(false)
+  // The range the currently-displayed kpis/monthly/topEntries were actually
+  // fetched for — distinct from the live dateFrom/dateTo in useDateStore,
+  // which updates the instant a preset is clicked, before Search is pressed.
+  // Everything rendered below must key off THIS range, not the live one, or
+  // the header ends up labeled with a period whose data was never fetched.
+  const [fetchedRange, setFetchedRange] = useState({ from: dateFrom, to: dateTo })
 
   const params = { coKey: selectedClient?.coKey, dateFrom, dateTo }
 
@@ -253,16 +259,17 @@ export function IeepaPage() {
       setKpis(k)
       setMonthly(m)
       setTopEntries(t)
+      setFetchedRange({ from: params.dateFrom, to: params.dateTo })
     }).catch(console.error).finally(() => setLoading(false))
   }, [searchTrigger, selectedClient?.coKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fullMonths = useMemo(() => buildFullMonthRange(dateFrom, dateTo, monthly), [dateFrom, dateTo, monthly])
-  const insights = useMemo(() => (kpis ? buildInsights(fullMonths, kpis) : []), [fullMonths, kpis])
-  const totalCombined = (kpis?.ieepaDuty ?? 0) + (kpis?.remediationDuty ?? 0)
-  const trueRegularDuty = Math.max(
-    0,
-    (kpis?.regularDuty ?? 0) - (kpis?.sec301 ?? 0) - (kpis?.sec232 ?? 0) - (kpis?.ieepaDuty ?? 0) - (kpis?.remediationDuty ?? 0),
+  const fullMonths = useMemo(
+    () => buildFullMonthRange(fetchedRange.from, fetchedRange.to, monthly),
+    [fetchedRange, monthly],
   )
+  const insights = useMemo(() => (kpis ? buildInsights(fullMonths, kpis) : []), [fullMonths, kpis])
+  const totalCombined = (kpis?.ieepaDuty ?? 0) + (kpis?.other99Duty ?? 0)
+  const trueRegularDuty = kpis?.regularDuty ?? 0
   const peakKey = useMemo(() => {
     const nonZero = fullMonths.filter((m) => m.combined > 0)
     if (nonZero.length === 0) return null
@@ -270,22 +277,22 @@ export function IeepaPage() {
   }, [fullMonths])
 
   const monthlyChartData = fullMonths.map((m) => ({
-    period: m.label, 'IEEPA Duty': m.ieepaDuty, 'Reciprocal Duty': m.remediation,
+    period: m.label, 'IEEPA Duty': m.ieepaDuty, 'Other 99xx Duty': m.other99,
   }))
   const duty301ChartData = fullMonths.map((m) => ({ period: m.label, 'Duty 301': m.sec301 }))
   const regularChartData = fullMonths.map((m) => ({ period: m.label, 'Regular Duty': m.regularDuty }))
 
   const donutData = kpis ? [
-    { name: 'Regular Duty', value: trueRegularDuty,        color: DONUT_COLORS.regular },
-    { name: 'Sec 301',      value: kpis.sec301,            color: DONUT_COLORS.sec301 },
-    { name: 'Sec 232',      value: kpis.sec232,            color: DONUT_COLORS.sec232 },
-    { name: 'IEEPA Duty',   value: kpis.ieepaDuty,         color: DONUT_COLORS.ieepa },
-    { name: 'Reciprocal',   value: kpis.remediationDuty,   color: DONUT_COLORS.remed },
+    { name: 'Regular Duty',   value: trueRegularDuty,    color: DONUT_COLORS.regular },
+    { name: 'Sec 301',        value: kpis.sec301,        color: DONUT_COLORS.sec301 },
+    { name: 'Sec 232',        value: kpis.sec232,        color: DONUT_COLORS.sec232 },
+    { name: 'IEEPA Duty',     value: kpis.ieepaDuty,     color: DONUT_COLORS.ieepa },
+    { name: 'Other 99xx Duty', value: kpis.other99Duty,  color: DONUT_COLORS.remed },
   ].filter((d) => d.value > 0) : []
 
   const maxTopEntry = topEntries[0]?.combinedIeepa ?? 0
-  const periodLabel = dateFrom && dateTo
-    ? `${format(parseISO(dateFrom), 'MMM d, yyyy')} – ${format(parseISO(dateTo), 'MMM d, yyyy')}`
+  const periodLabel = fetchedRange.from && fetchedRange.to
+    ? `${format(parseISO(fetchedRange.from), 'MMM d, yyyy')} – ${format(parseISO(fetchedRange.to), 'MMM d, yyyy')}`
     : 'All dates'
 
   const barChartRef = useRef<HTMLDivElement>(null)
@@ -309,19 +316,19 @@ export function IeepaPage() {
         trueRegularDuty,
         months: fullMonths.map((m) => ({
           key: m.key, label: m.label,
-          ieepaDuty: m.ieepaDuty, remediation: m.remediation, combined: m.combined,
+          ieepaDuty: m.ieepaDuty, other99: m.other99, combined: m.combined,
         })),
         topEntries,
         insights: insights.map((ins) => ({ title: ins.title, text: ins.text })),
         peakKey,
-        dateFrom,
-        dateTo,
+        dateFrom: fetchedRange.from,
+        dateTo: fetchedRange.to,
         clientName: selectedClient?.name,
         barChartImg,
         donutImg,
         duty301Img,
         generalDutyImg,
-      }, `IEEPA_Report_${selectedClient?.coKey ?? 'all-clients'}_${dateFrom}_to_${dateTo}.pdf`)
+      }, `IEEPA_Report_${selectedClient?.coKey ?? 'all-clients'}_${fetchedRange.from}_to_${fetchedRange.to}.pdf`)
     } finally {
       setExportingPdf(false)
     }
@@ -346,16 +353,6 @@ export function IeepaPage() {
             {selectedClient?.name ?? 'All Clients'} · {periodLabel} · {(kpis?.totalEntries ?? 0).toLocaleString()} entries
           </p>
         </div>
-      </div>
-
-      {/* Alert banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
-        <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-amber-800">
-          <strong>IEEPA tariffs effective February 2025.</strong> Reciprocal (&quot;Liberation Day&quot;) duties applied
-          from April 2025. This report covers customs entries subject to International Emergency Economic Powers Act
-          duties, Section 301, and Section 232 surcharges.
-        </p>
       </div>
 
       {loading ? (
@@ -398,17 +395,17 @@ export function IeepaPage() {
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <HighlightCard accent="teal" icon={<Zap className="h-3 w-3" />} tag="IEEPA Total"
-            label="Combined IEEPA Exposure" value={fmtM(totalCombined)}
-            sub="IEEPA Duty + Reciprocal combined"
+            label="Combined IEEPA + Other 99xx" value={fmtM(totalCombined)}
+            sub="IEEPA/Reciprocal Duty + Other 99xx combined"
             badge={`${pctStr(totalCombined, kpis?.totalDuty ?? 0)} of all duties paid`} />
           <HighlightCard accent="amber" icon={<Zap className="h-3 w-3" />} tag="IEEPA Duty"
-            label="IEEPA Duty" value={fmtM(kpis?.ieepaDuty ?? 0)}
-            sub="International Emergency Economic Powers Act"
+            label="IEEPA / Reciprocal Duty" value={fmtM(kpis?.ieepaDuty ?? 0)}
+            sub="HTS 9903.01/9903.02 — IEEPA & Liberation Day reciprocal tariffs"
             badge={`${pctStr(kpis?.ieepaDuty ?? 0, totalCombined)} of IEEPA total`} />
-          <HighlightCard accent="amber" icon={<Repeat className="h-3 w-3" />} tag="Reciprocal Duty"
-            label="IEEPA Reciprocal Duty" value={fmtM(kpis?.remediationDuty ?? 0)}
-            sub="Liberation Day reciprocal tariffs"
-            badge={`${pctStr(kpis?.remediationDuty ?? 0, totalCombined)} of IEEPA total`} />
+          <HighlightCard accent="amber" icon={<Repeat className="h-3 w-3" />} tag="Other 99xx"
+            label="Other 99xx Duty" value={fmtM(kpis?.other99Duty ?? 0)}
+            sub="Chapter-99 duty not mapped to Sec 301/232/IEEPA — needs compliance review"
+            badge={`${pctStr(kpis?.other99Duty ?? 0, totalCombined)} of IEEPA total`} />
         </div>
       </div>
 
@@ -416,7 +413,7 @@ export function IeepaPage() {
       {fullMonths.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <ChartCard title="Monthly IEEPA Duty Impact" sub="IEEPA Duty vs Reciprocal Duty by month">
+            <ChartCard title="Monthly IEEPA Duty Impact" sub="IEEPA Duty vs Other 99xx Duty by month">
               <div ref={barChartRef}>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={monthlyChartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
@@ -426,7 +423,7 @@ export function IeepaPage() {
                     <Tooltip formatter={(v: number) => formatUSD(v)} />
                     <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="IEEPA Duty" stackId="a" fill={DONUT_COLORS.regular} />
-                    <Bar dataKey="Reciprocal Duty" stackId="a" fill={DONUT_COLORS.ieepa} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="Other 99xx Duty" stackId="a" fill={DONUT_COLORS.ieepa} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -499,7 +496,7 @@ export function IeepaPage() {
                 <th className="text-left px-4 py-2.5 font-medium">Entry #</th>
                 <th className="text-left px-4 py-2.5 font-medium">Date</th>
                 <th className="text-right px-4 py-2.5 font-medium">IEEPA Duty</th>
-                <th className="text-right px-4 py-2.5 font-medium">Reciprocal Duty</th>
+                <th className="text-right px-4 py-2.5 font-medium">Other 99xx Duty</th>
                 <th className="text-right px-4 py-2.5 font-medium">Combined IEEPA</th>
                 <th className="text-left px-4 py-2.5 font-medium">Impact</th>
                 <th className="text-right px-4 py-2.5 font-medium">Entry Value</th>
@@ -525,7 +522,7 @@ export function IeepaPage() {
                     {e.entryDate ? format(parseISO(e.entryDate), 'MM/dd/yyyy') : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{formatUSD(e.ieepaDuty)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{formatUSD(e.remediationDuty)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{formatUSD(e.other99Duty)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-amber-600">{formatUSD(e.combinedIeepa)}</td>
                   <td className="px-4 py-2.5">
                     <div className="w-20 h-1.5 rounded-full bg-amber-100 overflow-hidden">
@@ -556,7 +553,7 @@ export function IeepaPage() {
                 <tr className="text-slate-500 border-b border-slate-100">
                   <th className="text-left px-4 py-2.5 font-medium">Month</th>
                   <th className="text-right px-4 py-2.5 font-medium">IEEPA Duty</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Reciprocal Duty</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Other 99xx Duty</th>
                   <th className="text-right px-4 py-2.5 font-medium">Combined</th>
                   <th className="text-left px-4 py-2.5 font-medium">Breakdown</th>
                   <th className="text-right px-4 py-2.5 font-medium">% of Period</th>
@@ -578,8 +575,8 @@ export function IeepaPage() {
                           : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        {m.remediation > 0
-                          ? <span className="font-semibold text-amber-600">{formatUSD(m.remediation)}</span>
+                        {m.other99 > 0
+                          ? <span className="font-semibold text-amber-600">{formatUSD(m.other99)}</span>
                           : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-4 py-2.5 text-right">
@@ -587,7 +584,7 @@ export function IeepaPage() {
                           ? <span className="font-extrabold text-slate-800">{formatUSD(m.combined)}</span>
                           : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-4 py-2.5"><MiniBar duty={m.ieepaDuty} recip={m.remediation} /></td>
+                      <td className="px-4 py-2.5"><MiniBar duty={m.ieepaDuty} recip={m.other99} /></td>
                       <td className="px-4 py-2.5 text-right text-slate-500 font-medium">
                         {pctStr(m.combined, totalCombined)}
                       </td>
@@ -598,10 +595,10 @@ export function IeepaPage() {
                 <tr className="bg-slate-50 font-bold">
                   <td className="px-4 py-2.5 text-teal-800">Total</td>
                   <td className="px-4 py-2.5 text-right text-teal-800">{formatUSD(kpis?.ieepaDuty ?? 0)}</td>
-                  <td className="px-4 py-2.5 text-right text-amber-600">{formatUSD(kpis?.remediationDuty ?? 0)}</td>
+                  <td className="px-4 py-2.5 text-right text-amber-600">{formatUSD(kpis?.other99Duty ?? 0)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-800 text-sm">{formatUSD(totalCombined)}</td>
                   <td className="px-4 py-2.5 text-[10px] text-slate-500">
-                    {pctStr(kpis?.ieepaDuty ?? 0, totalCombined)} / {pctStr(kpis?.remediationDuty ?? 0, totalCombined)}
+                    {pctStr(kpis?.ieepaDuty ?? 0, totalCombined)} / {pctStr(kpis?.other99Duty ?? 0, totalCombined)}
                   </td>
                   <td className="px-4 py-2.5 text-right text-teal-800">100.0%</td>
                   <td className="px-4 py-2.5 text-right text-slate-300">—</td>
@@ -612,7 +609,7 @@ export function IeepaPage() {
           {/* legend */}
           <div className="flex flex-wrap items-center gap-5 px-4 py-3 border-t border-slate-100 text-[11px] text-slate-500">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-teal-800" /> IEEPA Duty</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Reciprocal Duty</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Other 99xx Duty</span>
             <span className="flex items-center gap-1.5"><span className="text-amber-600 font-bold">▲</span> Month-over-month increase</span>
             <span className="flex items-center gap-1.5"><span className="text-emerald-600 font-bold">▼</span> Month-over-month decrease</span>
             <span className="flex items-center gap-1.5 text-amber-600 font-bold">★ Peak month</span>

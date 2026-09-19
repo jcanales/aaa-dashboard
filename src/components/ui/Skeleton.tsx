@@ -45,6 +45,25 @@ export function TableRowsSkeleton({ rows = 6, cols = 6 }: { rows?: number; cols?
   )
 }
 
+// Placeholder rows for an expanded HTS-code row's entry-level drill-down
+// (Entry #, Date, Importer, Value, Duty) — used while that row's entries
+// are being fetched, instead of a plain "Loading…" line.
+export function EntriesDrillDownSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="divide-y divide-slate-100/70">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 py-1.5">
+          <Sk className="h-2.5 w-24 flex-shrink-0" />
+          <Sk className="h-2.5 w-20 flex-shrink-0" />
+          <Sk className="h-2.5 flex-1 max-w-[160px]" />
+          <Sk className="h-2.5 w-14 flex-shrink-0 ml-auto" />
+          <Sk className="h-2.5 w-14 flex-shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function PresentationChartCardSkeleton() {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

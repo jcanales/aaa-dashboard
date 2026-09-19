@@ -4,8 +4,9 @@ import { useAuthStore } from '@/store/authStore'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
-import { IeepaPage } from '@/pages/IeepaPage'
 import { DutiesBreakdownPage } from '@/pages/DutiesBreakdownPage'
+import { DutyBucketDetailPage } from '@/pages/DutyBucketDetailPage'
+import { EntryDetailPage } from '@/pages/EntryDetailPage'
 import { AesPage } from '@/pages/AesPage'
 import { AbiCrossingsPage } from '@/pages/AbiCrossingsPage'
 import { AbiStatementsPage } from '@/pages/AbiStatementsPage'
@@ -55,8 +56,9 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route element={<RequireFullAccess />}>
               <Route path="dashboard"       element={<DashboardPage />} />
-              <Route path="ieepa"           element={<IeepaPage />} />
               <Route path="duties/hts"      element={<DutiesBreakdownPage />} />
+              <Route path="duties/hts/:bucket" element={<DutyBucketDetailPage />} />
+              <Route path="entries/:recid"  element={<EntryDetailPage />} />
               <Route path="aes"             element={<AesPage />} />
               <Route path="abi/crossings"   element={<AbiCrossingsPage />} />
               <Route path="abi/statements"  element={<AbiStatementsPage />} />

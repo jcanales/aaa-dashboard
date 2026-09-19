@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
-  ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers, Download,
+  ChevronDown, ChevronRight, DollarSign, Landmark, Percent, ShieldAlert, Layers, Boxes, Download, ExternalLink,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -10,11 +11,12 @@ import {
 import { ClientSelector } from '@/components/ui/ClientSelector'
 import { DateRangeSelector } from '@/components/ui/DateRangeSelector'
 import { SearchButton } from '@/components/ui/SearchButton'
-import { Sk, KpiCardSkeleton, ChartCardSkeleton, TableRowsSkeleton } from '@/components/ui/Skeleton'
+import { Sk, KpiCardSkeleton, ChartCardSkeleton, TableRowsSkeleton, EntriesDrillDownSkeleton } from '@/components/ui/Skeleton'
 import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
 import { captureElement } from '@/utils/chartCapture'
+import { formatUSD } from '@/utils/formatUtils'
 import { downloadHtsBreakdownPdf } from '@/utils/htsBreakdownReportPdf'
 import {
   fetchHtsBreakdown, fetchHtsEntries, fetchIeepaMonthly,
@@ -37,17 +39,32 @@ function rowsByDuty(rows: HtsBreakdownRow[]): HtsBreakdownRow[] {
   return [...rows].sort((a, b) => b.totalDuty - a.totalDuty)
 }
 
-function KpiCard({ title, value, sub, icon }: {
-  title: string; value: string; sub?: string; icon: React.ReactNode
+function KpiCard({ title, value, sub, icon, to }: {
+  title: string; value: string; sub?: string; icon: React.ReactNode; to?: string
 }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+  const inner = (
+    <>
       <div className="flex items-start justify-between mb-2">
-        <p className="text-xs text-slate-500 font-medium">{title}</p>
+        <p className="text-xs text-slate-500 font-medium flex items-center gap-1">
+          {title}
+          {to && <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />}
+        </p>
         <span className="text-teal-600">{icon}</span>
       </div>
       <p className="text-2xl font-bold text-slate-800 leading-tight">{value}</p>
       {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
+    </>
+  )
+  if (to) {
+    return (
+      <Link to={to} className="group bg-white rounded-xl border border-slate-200 p-4 shadow-sm block hover:shadow-md hover:border-teal-300 transition-all no-underline">
+        {inner}
+      </Link>
+    )
+  }
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      {inner}
     </div>
   )
 }
@@ -103,17 +120,19 @@ export function DutiesBreakdownPage() {
   const [loading, setLoading] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('totalDuty')
   const [sortDesc, setSortDesc] = useState(true)
+  // At most one row expanded at a time — accordion behavior. `expanded`
+  // therefore only ever holds zero or one key; activeHts guards against a
+  // stale fetch (for a row the user has since collapsed or switched away
+  // from) writing its result in after the fact.
   const [expanded, setExpanded] = useState<Record<string, HtsEntryRow[] | 'loading'>>({})
-  // Per-hts fetch generation counters guard against stale async writes: a fetch's
-  // .then/.catch only applies if both the row's own sequence and the filter
-  // generation are unchanged since the fetch was issued.
-  const expandSeq = useRef<Record<string, number>>({})
+  const activeHts = useRef<string | null>(null)
   const genRef = useRef(0)
 
   const params = { coKey: selectedClient?.coKey, dateFrom, dateTo }
 
   useEffect(() => {
     genRef.current += 1
+    activeHts.current = null
     setLoading(true)
     setExpanded({})
     Promise.all([
@@ -130,6 +149,7 @@ export function DutiesBreakdownPage() {
     // fire two overlapping requests, and without this check the older page's
     // response could resolve last and clobber the newer one.
     const gen = (genRef.current += 1)
+    activeHts.current = null
     setExpanded({})
     setLoading(true)
     fetchHtsBreakdown({ ...params, page: p, limit: PAGE_SIZE })
@@ -145,21 +165,21 @@ export function DutiesBreakdownPage() {
 
   function toggleExpand(hts: string) {
     if (expanded[hts]) {
-      expandSeq.current[hts] = (expandSeq.current[hts] ?? 0) + 1
-      setExpanded((e) => { const { [hts]: _, ...rest } = e; return rest })
+      activeHts.current = null
+      setExpanded({})
       return
     }
-    const seq = (expandSeq.current[hts] = (expandSeq.current[hts] ?? 0) + 1)
+    activeHts.current = hts
     const gen = genRef.current
-    setExpanded((e) => ({ ...e, [hts]: 'loading' }))
+    setExpanded({ [hts]: 'loading' })
     fetchHtsEntries({ hts, ...params })
       .then((rows) => {
-        if (expandSeq.current[hts] !== seq || genRef.current !== gen) return
-        setExpanded((e) => ({ ...e, [hts]: rows }))
+        if (activeHts.current !== hts || genRef.current !== gen) return
+        setExpanded({ [hts]: rows })
       })
       .catch(() => {
-        if (expandSeq.current[hts] !== seq || genRef.current !== gen) return
-        setExpanded((e) => { const { [hts]: _, ...rest } = e; return rest })
+        if (activeHts.current !== hts || genRef.current !== gen) return
+        setExpanded({})
       })
   }
 
@@ -179,12 +199,12 @@ export function DutiesBreakdownPage() {
   }))
 
   const trendData = monthly.map((m) => ({
-    // ieepa/monthly's regularDuty is the header DUTY grand total (incl. all
-    // surcharges), not the regular-duty segment alone — subtract the other
-    // buckets to isolate it.
-    period: m.period, Regular: Math.max(0, m.regularDuty - m.sec301 - m.sec232 - m.ieepaDuty - m.remediation),
+    // ieepa/monthly's buckets are computed from actual line-level HTS codes
+    // (see htsBuckets.ts's perEntryDutyCte) — already mutually exclusive, so
+    // no subtraction is needed to isolate the regular-duty segment.
+    period: m.period, Regular: m.regularDuty,
     'Sec 301': m.sec301, 'Sec 232': m.sec232,
-    IEEPA: m.ieepaDuty + m.remediation,
+    IEEPA: m.ieepaDuty + m.other99Duty,
   }))
 
   const donutData = t ? [
@@ -271,16 +291,15 @@ export function DutiesBreakdownPage() {
       ) : (
       <>
       {/* KPI tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard title="Total Duties"   value={fmtUSD(t?.totalDuty ?? 0)}
-                 sub={data ? `vs ${fmtUSD(data.totals.prior.totalDuty)} prior period` : undefined}
-                 icon={<DollarSign className="h-4 w-4" />} />
-        <KpiCard title="Regular Duty"   value={fmtUSD(t?.regularDuty ?? 0)} icon={<Landmark className="h-4 w-4" />} />
-        <KpiCard title="Section 301"    value={fmtUSD(t?.sec301 ?? 0)}      icon={<Percent className="h-4 w-4" />} />
-        <KpiCard title="Section 232"    value={fmtUSD(t?.sec232 ?? 0)}      icon={<Layers className="h-4 w-4" />} />
-        <KpiCard title="IEEPA"          value={fmtUSD((t?.ieepa ?? 0) + (t?.other ?? 0))}
-                 sub={t && t.other > 0 ? `incl. ${fmtUSD(t.other)} other Ch-99` : undefined}
-                 icon={<ShieldAlert className="h-4 w-4" />} />
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+        <KpiCard title="Total Duties"   value={formatUSD(t?.totalDuty ?? 0)}
+                 sub={data ? `vs ${formatUSD(data.totals.prior.totalDuty)} prior period` : undefined}
+                 icon={<DollarSign className="h-4 w-4" />} to="/duties/hts/total" />
+        <KpiCard title="Regular Duty"   value={formatUSD(t?.regularDuty ?? 0)} icon={<Landmark className="h-4 w-4" />} to="/duties/hts/regular" />
+        <KpiCard title="Section 301"    value={formatUSD(t?.sec301 ?? 0)}      icon={<Percent className="h-4 w-4" />} to="/duties/hts/sec301" />
+        <KpiCard title="Section 232"    value={formatUSD(t?.sec232 ?? 0)}      icon={<Layers className="h-4 w-4" />} to="/duties/hts/sec232" />
+        <KpiCard title="IEEPA"          value={formatUSD(t?.ieepa ?? 0)}       icon={<ShieldAlert className="h-4 w-4" />} to="/duties/hts/ieepa" />
+        <KpiCard title="Ch-99"          value={formatUSD(t?.other ?? 0)}       icon={<Boxes className="h-4 w-4" />} to="/duties/hts/ch99" />
       </div>
 
       {/* Chart row 1 */}
@@ -394,40 +413,54 @@ export function DutiesBreakdownPage() {
                     </td>
                     <td className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap">{formatHts(row.hts)}</td>
                     <td className="px-3 py-2 text-slate-500 max-w-[220px] truncate">{row.description ?? '—'}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtUSD(row.enteredValue)}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtUSD(row.regularDuty)}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtUSD(row.sec301)}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtUSD(row.sec232)}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtUSD(row.ieepa + row.other)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtUSD(row.totalDuty)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatUSD(row.enteredValue)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatUSD(row.regularDuty)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatUSD(row.sec301)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatUSD(row.sec232)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatUSD(row.ieepa + row.other)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatUSD(row.totalDuty)}</td>
                     <td className="px-3 py-2 text-right text-slate-500">
                       {t && t.totalDuty > 0 ? `${((row.totalDuty / t.totalDuty) * 100).toFixed(1)}%` : '—'}
                     </td>
                   </tr>
                   {expanded[row.hts] === 'loading' && (
-                    <tr><td colSpan={10} className="px-10 py-3 text-slate-400 text-[11px]">Loading entries…</td></tr>
+                    <tr><td colSpan={10} className="px-10 py-2"><EntriesDrillDownSkeleton /></td></tr>
                   )}
                   {Array.isArray(expanded[row.hts]) && (
                     <tr className="bg-slate-50/60">
                       <td colSpan={10} className="px-10 py-2">
                         <table className="w-full text-[11px]">
                           <thead>
-                            <tr className="text-slate-400">
-                              <th className="py-1 text-left font-medium">Entry #</th>
-                              <th className="py-1 text-left font-medium">Date</th>
-                              <th className="py-1 text-left font-medium">Importer</th>
-                              <th className="py-1 text-right font-medium">Value</th>
-                              <th className="py-1 text-right font-medium">Total Duty</th>
+                            <tr className="bg-[#093B49] text-white">
+                              <th className="py-1.5 px-2 text-left font-medium first:rounded-l">Entry #</th>
+                              <th className="py-1.5 px-2 text-left font-medium">Date</th>
+                              <th className="py-1.5 px-2 text-left font-medium">Importer</th>
+                              <th className="py-1.5 px-2 text-right font-medium">Entry Value</th>
+                              <th className="py-1.5 px-2 text-right font-medium">Regular</th>
+                              <th className="py-1.5 px-2 text-right font-medium">Sec 301</th>
+                              <th className="py-1.5 px-2 text-right font-medium">Sec 232</th>
+                              <th className="py-1.5 px-2 text-right font-medium">IEEPA</th>
+                              <th className="py-1.5 px-2 text-right font-medium">Ch-99</th>
+                              <th className="py-1.5 px-2 text-right font-medium last:rounded-r">Total Duty</th>
                             </tr>
                           </thead>
                           <tbody>
                             {(expanded[row.hts] as HtsEntryRow[]).map((en) => (
                               <tr key={en.recid} className="border-t border-slate-100">
-                                <td className="py-1 text-slate-600">{en.entryNo}</td>
-                                <td className="py-1 text-slate-500">{format(new Date(en.entryDate), 'MMM d, yyyy')}</td>
-                                <td className="py-1 text-slate-500">{en.custName ?? en.custKey}</td>
-                                <td className="py-1 text-right text-slate-600">{fmtUSD(en.enteredValue)}</td>
-                                <td className="py-1 text-right font-medium text-slate-700">{fmtUSD(en.totalDuty)}</td>
+                                <td className="py-1 px-2 text-slate-600">
+                                  <Link to={`/entries/${en.recid}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                                    {en.entryNo}
+                                  </Link>
+                                </td>
+                                <td className="py-1 px-2 text-slate-500">{format(new Date(en.entryDate), 'MMM d, yyyy')}</td>
+                                <td className="py-1 px-2 text-slate-500">{en.custName ?? en.custKey}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{formatUSD(en.enteredValue)}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{en.regularDuty > 0 ? formatUSD(en.regularDuty) : '—'}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{en.sec301 > 0 ? formatUSD(en.sec301) : '—'}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{en.sec232 > 0 ? formatUSD(en.sec232) : '—'}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{en.ieepa > 0 ? formatUSD(en.ieepa) : '—'}</td>
+                                <td className="py-1 px-2 text-right text-slate-600">{en.other > 0 ? formatUSD(en.other) : '—'}</td>
+                                <td className="py-1 px-2 text-right font-medium text-slate-700">{formatUSD(en.totalDuty)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -443,12 +476,12 @@ export function DutiesBreakdownPage() {
                 <tr className="font-semibold text-slate-700">
                   <td />
                   <td className="px-3 py-2" colSpan={2}>Total</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.enteredValue)}</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.regularDuty)}</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.sec301)}</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.sec232)}</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.ieepa + t.other)}</td>
-                  <td className="px-3 py-2 text-right">{fmtUSD(t.totalDuty)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.enteredValue)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.regularDuty)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.sec301)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.sec232)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.ieepa + t.other)}</td>
+                  <td className="px-3 py-2 text-right">{formatUSD(t.totalDuty)}</td>
                   <td className="px-3 py-2 text-right">100%</td>
                 </tr>
               </tfoot>

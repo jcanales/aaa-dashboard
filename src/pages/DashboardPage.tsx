@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -184,7 +184,7 @@ export function DashboardPage() {
           value={fmtUSD(kpis?.ieepaInRange ?? 0)}
           icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
           sub="View IEEPA breakdown →"
-          onClick={() => navigate('/ieepa')}
+          onClick={() => navigate('/duties/hts/ieepa')}
         />
         <KpiCard
           title="Avg Release Time"
@@ -242,7 +242,11 @@ export function DashboardPage() {
               )}
               {entries.map((e) => (
                 <tr key={e.recid} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{e.entryNo}</td>
+                  <td className="px-4 py-2.5 font-medium">
+                    <Link to={`/entries/${e.recid}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                      {e.entryNo}
+                    </Link>
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500">{e.entryType}</td>
                   <td className="px-4 py-2.5 text-slate-500">
                     {e.entryDate ? format(parseISO(e.entryDate), 'MMM d, yyyy') : '—'}

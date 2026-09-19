@@ -142,7 +142,7 @@ export interface IeepaKpis {
   sec301:          number
   sec232:          number
   ieepaDuty:       number
-  remediationDuty: number
+  other99Duty:     number
   totalDuty:       number
 }
 
@@ -156,20 +156,20 @@ export interface IeepaMonthRow {
   sec301:       number
   sec232:       number
   ieepaDuty:    number
-  remediation:  number
+  other99Duty:  number
 }
 
 export interface IeepaTopEntry {
-  recid:           string
-  entryNo:         string
-  entryDate:       string
-  port:            string
-  custKey:         string
-  custName:        string | null
-  entryVal:        number
-  ieepaDuty:       number
-  remediationDuty: number
-  combinedIeepa:   number
+  recid:         string
+  entryNo:       string
+  entryDate:     string
+  port:          string
+  custKey:       string
+  custName:      string | null
+  entryVal:      number
+  ieepaDuty:     number
+  other99Duty:   number
+  combinedIeepa: number
 }
 
 type IeepaParams = { coKey?: string; dateFrom?: string; dateTo?: string }
@@ -257,4 +257,97 @@ export async function fetchHtsEntries(params: {
   dateTo?:   string
 }): Promise<HtsEntryRow[]> {
   return get<HtsEntryRow[]>('/entries/hts-breakdown/entries', params as Record<string, string | undefined>)
+}
+
+// ── Single-entry detail ──────────────────────────────────────────────────────
+
+export interface EntryDetailLine {
+  lineId:       string
+  hts:          string | null
+  description:  string | null
+  enteredValue: number
+  regularDuty:  number
+  sec301:       number
+  sec232:       number
+  ieepa:        number
+  other99:      number
+  totalDuty:    number
+}
+
+export interface EntryDetail {
+  recid:       string
+  entryNo:     string
+  custKey:     string
+  custName:    string | null
+  entryDate:   string | null
+  relDate:     string | null
+  liqDate:     string | null
+  port:        string | null
+  originCo:    string | null
+  exporCo:     string | null
+  mot:         string | null
+  entryType:   string | null
+  entryVal:    number
+  regularDuty: number
+  sec301:      number
+  sec232:      number
+  ieepa:       number
+  other99:     number
+  totalDuty:   number
+  lines:       EntryDetailLine[]
+}
+
+export async function fetchEntryDetail(recid: string): Promise<EntryDetail> {
+  return get<EntryDetail>(`/entries/${encodeURIComponent(recid)}`)
+}
+
+// ── CBP Form 7501 data ───────────────────────────────────────────────────────
+
+export interface Cbp7501Party {
+  name:  string | null
+  addr1: string | null
+  addr2: string | null
+  city:  string | null
+  state: string | null
+  zip:   string | null
+  irsNo: string | null
+}
+
+export interface Cbp7501Line {
+  lineNo:       string
+  hts:          string | null
+  description:  string | null
+  mid:          string | null
+  grossWeight:  number | null
+  netQty:       number | null
+  units:        string | null
+  enteredValue: number
+  dutyRate:     number
+  totalDuty:    number
+}
+
+export interface Cbp7501Data {
+  recid:               string
+  entryNo:             string
+  entryType:           string | null
+  entryDate:           string | null
+  surety:              string | null
+  bondType:            string | null
+  port:                string | null
+  mot:                 string | null
+  originCo:            string | null
+  importDate:          string | null
+  exporCo:              string | null
+  exportDate:          string | null
+  foreignPortOfLading: string | null
+  usPortOfUnlading:    string | null
+  entryVal:            number
+  totalDuty:           number
+  importerOfRecord:    Cbp7501Party
+  ultimateConsignee:   Cbp7501Party
+  lines:               Cbp7501Line[]
+}
+
+export async function fetchEntryCbp7501(recid: string): Promise<Cbp7501Data> {
+  return get<Cbp7501Data>(`/entries/${encodeURIComponent(recid)}/cbp7501`)
 }

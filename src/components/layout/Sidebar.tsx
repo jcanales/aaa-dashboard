@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, TrendingUp, FileText, ArrowLeftRight,
+  LayoutDashboard, FileText, ArrowLeftRight,
   Receipt, Globe, PanelLeftClose, PanelLeft, X,
   Package, PieChart, Repeat, Upload, History, Settings,
   ChevronDown, ChevronRight,
@@ -90,7 +90,6 @@ export function Sidebar({
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const operationsItems = [
-    { path: '/ieepa',      icon: <TrendingUp className={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: 'IEEPA Analysis' },
     { path: '/duties/hts', icon: <PieChart className={ICON_SIZE} strokeWidth={ICON_STROKE} />,   label: 'Duties Breakdown' },
     { path: '/aes',        icon: <FileText className={ICON_SIZE} strokeWidth={ICON_STROKE} />,   label: 'AES Filings' },
   ]

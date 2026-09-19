@@ -232,16 +232,16 @@ const s = StyleSheet.create({
 // ── Document component ────────────────────────────────────────────────────────
 export interface PdfMonthRow {
   key: string; label: string
-  ieepaDuty: number; remediation: number; combined: number
+  ieepaDuty: number; other99: number; combined: number
 }
 export interface PdfInsight { title: string; text: string }
 
 interface Props {
   kpis: IeepaKpis
-  // USENTRY.DUTY (kpis.regularDuty) is the header grand-total duty and already
-  // includes sec301/232/ieepa/remediation — the caller isolates the true
-  // baseline duty (same correction DutiesBreakdownPage applies) and passes it
-  // in here rather than this module re-deriving it.
+  // kpis.regularDuty/sec301/sec232/ieepaDuty/other99Duty are computed
+  // backend-side from actual line-level HTS codes (mutually exclusive
+  // buckets) — trueRegularDuty is just kpis.regularDuty, passed in rather
+  // than this module re-deriving it, so the source of truth stays the page.
   trueRegularDuty: number
   months: PdfMonthRow[]
   topEntries: IeepaTopEntry[]
@@ -250,7 +250,7 @@ interface Props {
   dateFrom?: string
   dateTo?: string
   clientName?: string
-  barChartImg?: string       // Monthly IEEPA vs Reciprocal stacked bar
+  barChartImg?: string       // Monthly IEEPA vs Other 99xx stacked bar
   donutImg?: string          // Duty composition donut
   duty301Img?: string        // Monthly Section 301 bar
   generalDutyImg?: string    // Monthly general/regular duty bar
@@ -260,7 +260,7 @@ export function IeepaReportDocument({
   kpis, trueRegularDuty, months, topEntries, insights, peakKey,
   dateFrom, dateTo, clientName, barChartImg, donutImg, duty301Img, generalDutyImg,
 }: Props) {
-  const ieepaImpact = kpis.ieepaDuty + kpis.remediationDuty
+  const ieepaImpact = kpis.ieepaDuty + kpis.other99Duty
   const generated = new Intl.DateTimeFormat('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   }).format(new Date())
@@ -353,9 +353,9 @@ export function IeepaReportDocument({
               <Text style={s.hlPct}>{pct(kpis.ieepaDuty, ieepaImpact)} of IEEPA total</Text>
             </View>
             <View style={[s.highlightCard, s.hlRemed]}>
-              <Text style={[s.hlLabel, { color: '#7c2d12' }]}>Reciprocal Duty</Text>
-              <Text style={[s.hlAmount, { color: '#ea580c' }]}>{fmtM(kpis.remediationDuty)}</Text>
-              <Text style={s.hlPct}>{pct(kpis.remediationDuty, ieepaImpact)} of IEEPA total</Text>
+              <Text style={[s.hlLabel, { color: '#7c2d12' }]}>Other 99xx Duty</Text>
+              <Text style={[s.hlAmount, { color: '#ea580c' }]}>{fmtM(kpis.other99Duty)}</Text>
+              <Text style={s.hlPct}>{pct(kpis.other99Duty, ieepaImpact)} of IEEPA total</Text>
             </View>
           </View>
 
@@ -367,7 +367,7 @@ export function IeepaReportDocument({
               { label: 'Section 301', value: kpis.sec301, color: PURPLE },
               { label: 'Section 232', value: kpis.sec232, color: BLUE },
               { label: 'IEEPA Duty', value: kpis.ieepaDuty, color: AMBER },
-              { label: 'Reciprocal', value: kpis.remediationDuty, color: RED },
+              { label: 'Other 99xx', value: kpis.other99Duty, color: RED },
             ].map((item) => (
               <View key={item.label} style={[s.kpiCard, { borderLeftWidth: 3, borderLeftColor: item.color, flex: 1 }]}>
                 <Text style={[s.kpiLabel, { color: item.color }]}>{item.label}</Text>
@@ -385,7 +385,7 @@ export function IeepaReportDocument({
                 {barChartImg && (
                   <View style={[s.chartBox, { flex: 2 }]}>
                     <View style={s.chartHeader}>
-                      <Text style={s.chartTitle}>Monthly IEEPA &amp; Reciprocal Duty</Text>
+                      <Text style={s.chartTitle}>Monthly IEEPA &amp; Other 99xx Duty</Text>
                       <Text style={s.chartSub}>Stacked by duty type per month</Text>
                     </View>
                     <Image src={barChartImg} style={[s.chartImg, { padding: 6 }]} />
@@ -448,7 +448,7 @@ export function IeepaReportDocument({
                   <Text style={[s.theadCell, { flex: 1.5 }]}>Entry #</Text>
                   <Text style={s.theadCell}>Date</Text>
                   <Text style={s.theadCellR}>IEEPA Duty</Text>
-                  <Text style={s.theadCellR}>Reciprocal</Text>
+                  <Text style={s.theadCellR}>Other 99xx</Text>
                   <Text style={s.theadCellR}>Combined</Text>
                   <Text style={s.theadCellR}>Entry Value</Text>
                 </View>
@@ -457,7 +457,7 @@ export function IeepaReportDocument({
                     <Text style={[s.tcellBold, { flex: 1.5, fontSize: 6.5 }]}>{i + 1}. {row.entryNo}</Text>
                     <Text style={s.tcell}>{fmtDate(row.entryDate)}</Text>
                     <Text style={s.tcellR}>{fmtM(row.ieepaDuty)}</Text>
-                    <Text style={s.tcellR}>{fmtM(row.remediationDuty)}</Text>
+                    <Text style={s.tcellR}>{fmtM(row.other99Duty)}</Text>
                     <Text style={[s.tcellAmt, { color: AMBER }]}>{fmtM(row.combinedIeepa)}</Text>
                     <Text style={[s.tcellAmt, { color: TEAL }]}>{fmtM(row.entryVal)}</Text>
                   </View>
@@ -486,7 +486,7 @@ export function IeepaReportDocument({
                 <View style={s.thead}>
                   <Text style={s.theadCell}>Month</Text>
                   <Text style={s.theadCellR}>IEEPA Duty</Text>
-                  <Text style={s.theadCellR}>Reciprocal Duty</Text>
+                  <Text style={s.theadCellR}>Other 99xx Duty</Text>
                   <Text style={s.theadCellR}>Combined</Text>
                   <Text style={s.theadCellR}>% of Period</Text>
                 </View>
@@ -494,8 +494,8 @@ export function IeepaReportDocument({
                   <View key={m.key} style={m.key === peakKey ? s.trowPeak : (i % 2 === 0 ? s.trow : s.trowAlt)}>
                     <Text style={s.tcellBold}>{m.label}{m.key === peakKey ? ' ★' : ''}</Text>
                     <Text style={s.tcellR}>{m.ieepaDuty > 0 ? fmtM(m.ieepaDuty) : '—'}</Text>
-                    <Text style={[s.tcellR, { color: m.remediation > 0 ? AMBER : SLATE_L }]}>
-                      {m.remediation > 0 ? fmtM(m.remediation) : '—'}
+                    <Text style={[s.tcellR, { color: m.other99 > 0 ? AMBER : SLATE_L }]}>
+                      {m.other99 > 0 ? fmtM(m.other99) : '—'}
                     </Text>
                     <Text style={[s.tcellAmt, { color: m.combined > 0 ? TEAL : SLATE_L }]}>
                       {m.combined > 0 ? fmtM(m.combined) : '—'}
@@ -506,7 +506,7 @@ export function IeepaReportDocument({
                 <View style={s.tfoot}>
                   <Text style={[s.tcellBold]}>Total</Text>
                   <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>{fmtM(kpis.ieepaDuty)}</Text>
-                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: AMBER }]}>{fmtM(kpis.remediationDuty)}</Text>
+                  <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: AMBER }]}>{fmtM(kpis.other99Duty)}</Text>
                   <Text style={[s.tcellAmt, { color: TEAL }]}>{fmtM(ieepaImpact)}</Text>
                   <Text style={[s.tcellR, { fontFamily: 'Helvetica-Bold', color: TEAL }]}>100.0%</Text>
                 </View>

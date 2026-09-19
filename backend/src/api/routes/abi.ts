@@ -128,6 +128,8 @@ router.get('/crossing', async (req: Request, res: Response): Promise<void> => {
       r.query<{
         RECID:      string;
         TRAF_NO:    string;
+        ENTRY_NO:   string | null;
+        ENTRY_RECID: string | null;
         TRAF_DATE:  Date;
         CUST_KEY:   string;
         CO_NAME:    string | null;
@@ -140,6 +142,8 @@ router.get('/crossing', async (req: Request, res: Response): Promise<void> => {
         SELECT
           t.RECID,
           RTRIM(t.TRAF_NO)   AS TRAF_NO,
+          RTRIM(tc.DOC_ID)   AS ENTRY_NO,
+          e.RECID            AS ENTRY_RECID,
           t.TRAF_DATE,
           RTRIM(t.CUST_KEY)  AS CUST_KEY,
           m.CO_NAME,
@@ -150,6 +154,10 @@ router.get('/crossing', async (req: Request, res: Response): Promise<void> => {
           RTRIM(t.TRAF_STAT) AS TRAF_STAT
         FROM   TRAF t
         LEFT   JOIN MST m ON m.CO_KEY = RTRIM(t.CUST_KEY)
+        -- One TRAFC 'ENTRY' doc per TRAF_NO at most (verified — no TRAF_NO
+        -- carries more than one), so this LEFT JOIN can't fan out rows.
+        LEFT   JOIN TRAFC tc ON tc.TRAF_NO = t.TRAF_NO AND tc.DOC_TYPE = 'ENTRY'
+        LEFT   JOIN USENTRY e ON RTRIM(e.ENTRY_FIL)+'-'+RTRIM(e.ENTRY)+'-'+RTRIM(e.ENTRY_DIG) = RTRIM(tc.DOC_ID)
         ${where}
         ORDER  BY t.TRAF_DATE DESC
         OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
@@ -162,6 +170,8 @@ router.get('/crossing', async (req: Request, res: Response): Promise<void> => {
         return {
           recid:      String(row.RECID),
           trafficNo:  row.TRAF_NO.trim(),
+          entryNo:    row.ENTRY_NO?.trim() || null,
+          entryRecid: row.ENTRY_RECID != null ? String(row.ENTRY_RECID) : null,
           date:       row.TRAF_DATE ? row.TRAF_DATE.toISOString().slice(0, 10) : null,
           coKey:      row.CUST_KEY.trim(),
           coName:     row.CO_NAME?.trim() ?? null,

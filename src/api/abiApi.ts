@@ -35,6 +35,8 @@ async function get<T>(path: string, params?: Record<string, string | number | un
 export interface CrossingRow {
   recid:      string
   trafficNo:  string
+  entryNo:    string | null
+  entryRecid: string | null
   date:       string | null
   coKey:      string
   coName:     string | null

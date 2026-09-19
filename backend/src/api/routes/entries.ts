@@ -87,11 +87,14 @@ router.get('/kpis', async (req: Request, res: Response): Promise<void> => {
       DUTY_IN_RANGE:     number;
       DUTY_PRIOR:        number;
       VALUE_IN_RANGE:    number;
+      VALUE_PRIOR:       number;
       SEC301_IN_RANGE:   number;
       SEC232_IN_RANGE:   number;
       IEEPA_IN_RANGE:    number;
+      IEEPA_PRIOR:       number;
       REMED_IN_RANGE:    number;
       AVG_RELEASE_DAYS:  number | null;
+      AVG_RELEASE_DAYS_PRIOR: number | null;
       ENTRIES_PENDING:   number;
     }>(`
       SELECT
@@ -102,6 +105,7 @@ router.get('/kpis', async (req: Request, res: Response): Promise<void> => {
         SUM(CASE WHEN e.ENTRY_DATE BETWEEN @priorFrom AND @priorTo  THEN ISNULL(e.DUTY,0) ELSE 0 END) AS DUTY_PRIOR,
 
         SUM(CASE WHEN e.ENTRY_DATE BETWEEN @dateFrom  AND @dateTo   THEN ISNULL(e.ENTRY_VAL,0) ELSE 0 END) AS VALUE_IN_RANGE,
+        SUM(CASE WHEN e.ENTRY_DATE BETWEEN @priorFrom AND @priorTo  THEN ISNULL(e.ENTRY_VAL,0) ELSE 0 END) AS VALUE_PRIOR,
 
         SUM(CASE WHEN e.ENTRY_DATE BETWEEN @dateFrom  AND @dateTo
                  THEN ISNULL(e.DUTY_SEC_301,0)   ELSE 0 END) AS SEC301_IN_RANGE,
@@ -109,11 +113,15 @@ router.get('/kpis', async (req: Request, res: Response): Promise<void> => {
                  THEN ISNULL(e.DUTY_SEC_232,0)   ELSE 0 END) AS SEC232_IN_RANGE,
         SUM(CASE WHEN e.ENTRY_DATE BETWEEN @dateFrom  AND @dateTo
                  THEN ISNULL(e.DUTY_SEC_IEEPA,0) ELSE 0 END) AS IEEPA_IN_RANGE,
+        SUM(CASE WHEN e.ENTRY_DATE BETWEEN @priorFrom AND @priorTo
+                 THEN ISNULL(e.DUTY_SEC_IEEPA,0) ELSE 0 END) AS IEEPA_PRIOR,
         SUM(CASE WHEN e.ENTRY_DATE BETWEEN @dateFrom  AND @dateTo
                  THEN ISNULL(e.REMEDIATION_DUTY,0) ELSE 0 END) AS REMED_IN_RANGE,
 
         AVG(CASE WHEN e.REL_DATE IS NOT NULL AND e.ENTRY_DATE BETWEEN @dateFrom AND @dateTo
                  THEN DATEDIFF(DAY, e.ENTRY_DATE, e.REL_DATE) END) AS AVG_RELEASE_DAYS,
+        AVG(CASE WHEN e.REL_DATE IS NOT NULL AND e.ENTRY_DATE BETWEEN @priorFrom AND @priorTo
+                 THEN DATEDIFF(DAY, e.ENTRY_DATE, e.REL_DATE) END) AS AVG_RELEASE_DAYS_PRIOR,
 
         SUM(CASE WHEN e.REL_DATE IS NULL THEN 1 ELSE 0 END) AS ENTRIES_PENDING
       FROM USENTRY e
@@ -127,11 +135,14 @@ router.get('/kpis', async (req: Request, res: Response): Promise<void> => {
       dutyInRange:     Number(row.DUTY_IN_RANGE),
       dutyPrior:       Number(row.DUTY_PRIOR),
       valueInRange:    Number(row.VALUE_IN_RANGE),
+      valuePrior:      Number(row.VALUE_PRIOR),
       sec301InRange:   Number(row.SEC301_IN_RANGE),
       sec232InRange:   Number(row.SEC232_IN_RANGE),
       ieepaInRange:    Number(row.IEEPA_IN_RANGE),
+      ieepaPrior:      Number(row.IEEPA_PRIOR),
       remediationInRange: Number(row.REMED_IN_RANGE),
       avgReleaseDays:  row.AVG_RELEASE_DAYS !== null ? Number(row.AVG_RELEASE_DAYS) : null,
+      avgReleaseDaysPrior: row.AVG_RELEASE_DAYS_PRIOR !== null ? Number(row.AVG_RELEASE_DAYS_PRIOR) : null,
       entriesPending:  Number(row.ENTRIES_PENDING),
       dateFrom:        from.toISOString().slice(0, 10),
       dateTo:          to.toISOString().slice(0, 10),
@@ -895,9 +906,9 @@ router.get('/:recid/cbp7501', async (req: Request, res: Response): Promise<void>
 function buildEmptyKpis() {
   return {
     entriesInRange: 0, entriesPrior: 0,
-    dutyInRange: 0, dutyPrior: 0, valueInRange: 0,
-    sec301InRange: 0, sec232InRange: 0, ieepaInRange: 0, remediationInRange: 0,
-    avgReleaseDays: null, entriesPending: 0,
+    dutyInRange: 0, dutyPrior: 0, valueInRange: 0, valuePrior: 0,
+    sec301InRange: 0, sec232InRange: 0, ieepaInRange: 0, ieepaPrior: 0, remediationInRange: 0,
+    avgReleaseDays: null, avgReleaseDaysPrior: null, entriesPending: 0,
     dateFrom: '', dateTo: '',
   };
 }

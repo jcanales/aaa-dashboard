@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList,
 } from 'recharts'
 import { TrendingUp, TrendingDown, Clock, Package, DollarSign, AlertTriangle } from 'lucide-react'
 import { ClientSelector } from '@/components/ui/ClientSelector'
@@ -13,9 +13,11 @@ import { useClients } from '@/hooks/useClients'
 import { useClientStore } from '@/store/clientStore'
 import { useDateStore } from '@/store/dateStore'
 import {
-  fetchEntryKpis, fetchMonthlyData, fetchEntries,
-  type EntryKpis, type MonthlyPoint, type Entry,
+  fetchEntryKpis, fetchIeepaMonthly, fetchEntries,
+  type EntryKpis, type IeepaMonthRow, type Entry,
 } from '@/api/entriesApi'
+
+const DUTY_COLORS = { regular: '#0f766e', sec301: '#f59e0b', sec232: '#6366f1', ieepa: '#dc2626', ch99: '#94a3b8' }
 
 function fmtUSD(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -30,7 +32,8 @@ function pct(a: number, b: number) {
   return ((a - b) / b) * 100
 }
 
-function Trend({ current, prior }: { current: number; prior: number }) {
+function Trend({ current, prior }: { current: number; prior: number | null }) {
+  if (prior === null) return null
   const p = pct(current, prior)
   if (p === null) return null
   const up = p >= 0
@@ -42,9 +45,9 @@ function Trend({ current, prior }: { current: number; prior: number }) {
   )
 }
 
-function KpiCard({ title, value, sub, icon, trend, onClick }: {
+function KpiCard({ title, value, sub, icon, trend, priorValue, onClick }: {
   title: string; value: string; sub?: string; icon: React.ReactNode; trend?: React.ReactNode
-  onClick?: () => void
+  priorValue?: string; onClick?: () => void
 }) {
   return (
     <div
@@ -58,10 +61,16 @@ function KpiCard({ title, value, sub, icon, trend, onClick }: {
         <span className="text-teal-600">{icon}</span>
       </div>
       <p className="text-2xl font-bold text-slate-800 leading-tight">{value}</p>
-      <div className="flex items-center gap-2 mt-1">
-        {trend}
-        {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
-      </div>
+      {(trend || priorValue) && (
+        <div className="mt-1">
+          <p className="text-[11px] text-slate-400">vs prior period</p>
+          <div className="flex items-center gap-2">
+            {priorValue && <span className="text-[11px] text-slate-500">{priorValue}</span>}
+            {trend}
+          </div>
+        </div>
+      )}
+      {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
     </div>
   )
 }
@@ -97,10 +106,11 @@ export function DashboardPage() {
   const { dateFrom, dateTo, searchTrigger } = useDateStore()
 
   const [kpis, setKpis] = useState<EntryKpis | null>(null)
-  const [monthly, setMonthly] = useState<MonthlyPoint[]>([])
+  const [monthly, setMonthly] = useState<IeepaMonthRow[]>([])
   const [entries, setEntries] = useState<Entry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   const [loading, setLoading] = useState(false)
 
   const params = { coKey: selectedClient?.coKey, dateFrom, dateTo }
@@ -109,8 +119,8 @@ export function DashboardPage() {
     setLoading(true)
     Promise.all([
       fetchEntryKpis(params),
-      fetchMonthlyData(params),
-      fetchEntries({ ...params, page: 1, limit: 20 }),
+      fetchIeepaMonthly(params),
+      fetchEntries({ ...params, page: 1, limit: pageSize }),
     ]).then(([k, m, e]) => {
       setKpis(k)
       setMonthly(m)
@@ -120,20 +130,27 @@ export function DashboardPage() {
     }).catch(console.error).finally(() => setLoading(false))
   }, [searchTrigger, selectedClient?.coKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadPage = (p: number) => {
-    fetchEntries({ ...params, page: p, limit: 20 })
+  const loadPage = (p: number, size: number = pageSize) => {
+    fetchEntries({ ...params, page: p, limit: size })
       .then((e) => { setEntries(e.data); setPage(p) })
       .catch(console.error)
   }
 
+  function changePageSize(size: number) {
+    setPageSize(size)
+    loadPage(1, size)
+  }
+
   const chartData = monthly.map((m) => ({
-    period: m.period.slice(0, 7),
-    Duties: m.duties,
-    Value: m.value,
-    Tariff: m.tariff,
+    period: m.period,
+    Regular: m.regularDuty,
+    'Sec 301': m.sec301,
+    'Sec 232': m.sec232,
+    IEEPA: m.ieepaDuty,
+    'Ch-99': m.other99Duty,
   }))
 
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = Math.ceil(total / pageSize)
 
   return (
     <div className="space-y-6">
@@ -164,13 +181,14 @@ export function DashboardPage() {
           value={fmtNum(kpis?.entriesInRange ?? 0)}
           icon={<Package className="h-4 w-4" />}
           trend={kpis && <Trend current={kpis.entriesInRange} prior={kpis.entriesPrior} />}
-          sub="vs prior period"
+          priorValue={kpis ? fmtNum(kpis.entriesPrior) : undefined}
         />
         <KpiCard
           title="Total Duties Paid"
           value={fmtUSD(kpis?.dutyInRange ?? 0)}
           icon={<DollarSign className="h-4 w-4" />}
           trend={kpis && <Trend current={kpis.dutyInRange} prior={kpis.dutyPrior} />}
+          priorValue={kpis ? fmtUSD(kpis.dutyPrior) : undefined}
           sub="View HTS breakdown →"
           onClick={() => navigate('/duties/hts')}
         />
@@ -178,11 +196,15 @@ export function DashboardPage() {
           title="Entry Value"
           value={fmtUSD(kpis?.valueInRange ?? 0)}
           icon={<TrendingUp className="h-4 w-4" />}
+          trend={kpis && <Trend current={kpis.valueInRange} prior={kpis.valuePrior} />}
+          priorValue={kpis ? fmtUSD(kpis.valuePrior) : undefined}
         />
         <KpiCard
           title="IEEPA Duties"
           value={fmtUSD(kpis?.ieepaInRange ?? 0)}
           icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
+          trend={kpis && <Trend current={kpis.ieepaInRange} prior={kpis.ieepaPrior} />}
+          priorValue={kpis ? fmtUSD(kpis.ieepaPrior) : undefined}
           sub="View IEEPA breakdown →"
           onClick={() => navigate('/duties/hts/ieepa')}
         />
@@ -190,6 +212,8 @@ export function DashboardPage() {
           title="Avg Release Time"
           value={kpis?.avgReleaseDays != null ? `${kpis.avgReleaseDays.toFixed(1)}d` : '—'}
           icon={<Clock className="h-4 w-4" />}
+          trend={kpis && <Trend current={kpis.avgReleaseDays ?? 0} prior={kpis.avgReleaseDaysPrior} />}
+          priorValue={kpis?.avgReleaseDaysPrior != null ? `${kpis.avgReleaseDaysPrior.toFixed(1)}d` : undefined}
           sub={`${fmtNum(kpis?.entriesPending ?? 0)} pending`}
         />
       </div>
@@ -197,16 +221,34 @@ export function DashboardPage() {
       {/* Monthly chart */}
       {chartData.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Monthly Duty & Value Trend</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Monthly Duty Trend by Type</h2>
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <BarChart data={chartData} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="period" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => fmtUSD(v)} width={60} />
-              <Tooltip formatter={(v: number) => fmtUSD(v)} />
+              <Tooltip
+                formatter={(v: number) => fmtUSD(v)}
+                contentStyle={{ fontSize: 11, padding: '4px 8px', borderRadius: 6 }}
+                itemStyle={{ padding: 0 }}
+                labelStyle={{ fontSize: 11, marginBottom: 2 }}
+              />
               <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Duties" fill="#073b49" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="Tariff" fill="#3A6FF9" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="Regular" fill={DUTY_COLORS.regular} radius={[2, 2, 0, 0]}>
+                <LabelList dataKey="Regular" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+              </Bar>
+              <Bar dataKey="Sec 301" fill={DUTY_COLORS.sec301} radius={[2, 2, 0, 0]}>
+                <LabelList dataKey="Sec 301" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+              </Bar>
+              <Bar dataKey="Sec 232" fill={DUTY_COLORS.sec232} radius={[2, 2, 0, 0]}>
+                <LabelList dataKey="Sec 232" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+              </Bar>
+              <Bar dataKey="IEEPA"   fill={DUTY_COLORS.ieepa} radius={[2, 2, 0, 0]}>
+                <LabelList dataKey="IEEPA" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+              </Bar>
+              <Bar dataKey="Ch-99"   fill={DUTY_COLORS.ch99} radius={[2, 2, 0, 0]}>
+                <LabelList dataKey="Ch-99" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -271,9 +313,19 @@ export function DashboardPage() {
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-400">Page {page} of {totalPages}</span>
+        <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(e) => changePageSize(Number(e.target.value))}
+              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-200"
+            >
+              {[25, 50, 75, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400">Page {page} of {totalPages || 1}</span>
             <div className="flex gap-1">
               <button
                 onClick={() => loadPage(page - 1)}
@@ -284,14 +336,14 @@ export function DashboardPage() {
               </button>
               <button
                 onClick={() => loadPage(page + 1)}
-                disabled={page === totalPages}
+                disabled={page >= totalPages}
                 className="px-2.5 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
               >
                 Next
               </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
       </>
       )}

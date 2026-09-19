@@ -39,11 +39,14 @@ export interface EntryKpis {
   dutyInRange:       number
   dutyPrior:         number
   valueInRange:      number
+  valuePrior:        number
   sec301InRange:     number
   sec232InRange:     number
   ieepaInRange:      number
+  ieepaPrior:        number
   remediationInRange: number
   avgReleaseDays:    number | null
+  avgReleaseDaysPrior: number | null
   entriesPending:    number
   dateFrom:          string
   dateTo:            string
